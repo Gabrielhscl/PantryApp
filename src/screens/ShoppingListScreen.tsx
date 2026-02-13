@@ -21,7 +21,7 @@ import { InventoryRepository } from "../repositories/inventoryRepository";
 import { ProductService } from "../services/productService";
 import { useShoppingList } from "../hooks/useShoppingList";
 
-export default function ShoppingListScreen() {
+export default function ShoppingListScreen({ navigation }: any) {
   const { items, refresh, toggleItem, removeItem } = useShoppingList();
   const [modalVisible, setModalVisible] = useState(false);
 

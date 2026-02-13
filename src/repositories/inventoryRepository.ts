@@ -135,6 +135,13 @@ export const InventoryRepository = {
     });
   },
 
+  async updateQuantity(id: string, newQuantity: number) {
+    return await db
+      .update(inventoryItems)
+      .set({ quantity: newQuantity, updatedAt: new Date() })
+      .where(eq(inventoryItems.id, id));
+  },
+
   async deleteItem(id: string) {
     return await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
   },

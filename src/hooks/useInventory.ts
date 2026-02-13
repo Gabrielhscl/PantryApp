@@ -1,3 +1,4 @@
+//
 import { useState, useEffect, useCallback } from 'react';
 import { InventoryRepository } from '../repositories/inventoryRepository';
 import { Alert } from 'react-native';
@@ -7,7 +8,6 @@ export function useInventory() {
   const [filter, setFilter] = useState<'all' | 'fridge' | 'freezer' | 'pantry'>('all');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Carregar dados
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -24,10 +24,9 @@ export function useInventory() {
     loadData();
   }, [loadData]);
 
-  // Ações Rápidas
   const increment = async (id: string, current: number) => {
-    // UI Optimistic Update (Atualiza a tela ANTES do banco para parecer instantâneo)
     setItems(prev => prev.map(item => item.id === id ? { ...item, quantity: current + 1 } : item));
+    // Ajustado para chamar updateItem ou uma função específica de quantidade
     await InventoryRepository.updateQuantity(id, current + 1);
   };
 
@@ -45,18 +44,14 @@ export function useInventory() {
 
   const removeItem = async (id: string) => {
     setItems(prev => prev.filter(item => item.id !== id));
-    await InventoryRepository.delete(id);
+    // CORREÇÃO: Chamando o nome correto da função no repositório
+    await InventoryRepository.deleteItem(id); 
   };
 
-  // Filtragem e Ordenação
   const filteredItems = items.filter(item => {
-  if (filter === 'all') return true;
-  // Ajustado para bater com os IDs do modal/banco
-  if (filter === 'fridge') return item.location === 'fridge';
-  if (filter === 'freezer') return item.location === 'freezer';
-  if (filter === 'pantry') return item.location === 'pantry';
-  return true;
-});
+    if (filter === 'all') return true;
+    return item.location === filter;
+  });
 
   return {
     items: filteredItems,

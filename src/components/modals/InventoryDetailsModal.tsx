@@ -27,34 +27,33 @@ export function InventoryDetailsModal({ visible, onClose, item }: Props) {
     return `Faltam ${diff} dias`;
   };
 
-  // --- LÓGICA DE QUANTIDADE ---
-  const renderQuantity = () => {
+  // --- NOVA LÓGICA DE EXIBIÇÃO DE QUANTIDADE ---
+  const renderQuantitySection = () => {
     const qty = item.quantity;
     const pSize = item.packSize || 0;
     const isBulk = BULK_CATEGORIES.some((cat: string) => item.category?.includes(cat));
 
-    if (isBulk) {
-        let displayQty = qty;
-        let displayUnit = item.unit;
-        if (item.unit === 'g' && qty >= 1000) { displayQty = parseFloat((qty / 1000).toFixed(2)); displayUnit = 'kg'; }
-        else if (item.unit === 'ml' && qty >= 1000) { displayQty = parseFloat((qty / 1000).toFixed(2)); displayUnit = 'L'; }
-        return <Text style={styles.bigQty}>{displayQty}<Text style={styles.smallUnit}>{displayUnit}</Text></Text>;
-    }
-
-    if (!pSize || pSize <= 0) {
-        return <Text style={styles.bigQty}>{qty}<Text style={styles.smallUnit}>{item.unit}</Text></Text>;
-    }
-
-    const units = Math.floor(qty / pSize);
-    const remainder = parseFloat((qty - (units * pSize)).toFixed(2));
-
-    if (remainder === 0) return <Text style={styles.bigQty}>{units}<Text style={styles.smallUnit}> UN</Text></Text>;
-    if (units === 0) return <Text style={styles.bigQty}>{remainder}<Text style={styles.smallUnit}>{item.unit}</Text></Text>;
+    // Formata o total bruto (ex: 1500g -> 1.5kg)
+    let displayTotal = qty;
+    let displayUnit = item.unit;
+    if (item.unit === 'g' && qty >= 1000) { displayTotal = parseFloat((qty / 1000).toFixed(2)); displayUnit = 'kg'; }
+    else if (item.unit === 'ml' && qty >= 1000) { displayTotal = parseFloat((qty / 1000).toFixed(2)); displayUnit = 'L'; }
 
     return (
-        <View style={{alignItems: 'center'}}>
-            <Text style={styles.bigQty}>{units}<Text style={styles.smallUnit}> UN</Text></Text>
-            <Text style={styles.subQty}>+ {remainder} {item.unit} (aberto)</Text>
+        <View style={styles.statusCardMain}>
+            <Text style={styles.label}>Estoque Total</Text>
+            {/* VALOR BRUTO EM DESTAQUE (conforme cadastrado) */}
+            <Text style={styles.bigQty}>{displayTotal}<Text style={styles.smallUnit}>{displayUnit}</Text></Text>
+            
+            {/* EQUIVALÊNCIA EM UNIDADES (apenas se for embalado e tiver tamanho definido) */}
+            {!isBulk && pSize > 0 && (
+                <View style={styles.equivalenceBadge}>
+                    <Ionicons name="layers-outline" size={14} color="#FF9500" style={{marginRight: 4}} />
+                    <Text style={styles.equivalenceText}>
+                        {Math.floor(qty / pSize)} UN + {parseFloat((qty % pSize).toFixed(2))}{item.unit}
+                    </Text>
+                </View>
+            )}
         </View>
     );
   };
@@ -73,8 +72,6 @@ export function InventoryDetailsModal({ visible, onClose, item }: Props) {
         <TouchableOpacity style={styles.backdrop} onPress={onClose} />
         
         <View style={styles.content}>
-          
-          {/* HEADER HEADER */}
           <View style={styles.header}>
              <View style={styles.imageContainer}>
                 {item.image ? (
@@ -95,22 +92,17 @@ export function InventoryDetailsModal({ visible, onClose, item }: Props) {
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 30}}>
             
-            {/* CARTÃO DE STATUS PRINCIPAL */}
+            {/* SEÇÃO DE QUANTIDADE ATUALIZADA */}
             <View style={styles.statusRow}>
-                {/* Quantidade */}
-                <View style={[styles.statusCard, {flex: 1.5}]}>
-                    <Text style={styles.label}>Estoque Atual</Text>
-                    {renderQuantity()}
-                </View>
+                {renderQuantitySection()}
                 
-                {/* Local */}
-                <View style={[styles.statusCard, {flex: 1, backgroundColor: locInfo.bg}]}>
+                <View style={[styles.statusCardSide, {backgroundColor: locInfo.bg}]}>
                     <Ionicons name={locInfo.icon as any} size={24} color={locInfo.color} style={{marginBottom: 5}}/>
                     <Text style={[styles.locText, {color: locInfo.color}]}>{locInfo.label}</Text>
                 </View>
             </View>
 
-            {/* DATAS (COMPRA E VALIDADE) */}
+            {/* DATAS */}
             <View style={styles.datesContainer}>
                 <View style={styles.dateRow}>
                     <View style={[styles.iconCircle, {backgroundColor: '#E8F5E9'}]}>
@@ -140,7 +132,7 @@ export function InventoryDetailsModal({ visible, onClose, item }: Props) {
                 </View>
             </View>
 
-            {/* NUTRIÇÃO */}
+            {/* NUTRIÇÃO E ALERTAS (MANTIDOS) */}
             <Text style={styles.sectionTitle}>Tabela Nutricional (100g)</Text>
             <View style={styles.nutritionGrid}>
                 <NutriItem label="Kcal" value={item.calories} />
@@ -151,7 +143,6 @@ export function InventoryDetailsModal({ visible, onClose, item }: Props) {
                 <NutriItem label="Sódio" value={item.sodium} unit="mg" />
             </View>
 
-            {/* ETIQUETAS */}
             {item.allergens ? (
                 <View style={{marginTop: 20}}>
                     <Text style={styles.sectionTitle}>Alertas</Text>
@@ -181,7 +172,7 @@ const NutriItem = ({ label, value, unit="" }: {label:string, value:any, unit?:st
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  backdrop: { flex: 1 },
+  backdrop: { ...StyleSheet.absoluteFillObject },
   content: { backgroundColor: '#F8F9FA', borderTopLeftRadius: 30, borderTopRightRadius: 30, height: '85%', padding: 24, paddingBottom: 0 },
   
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
@@ -193,11 +184,16 @@ const styles = StyleSheet.create({
   closeBtn: { padding: 8, backgroundColor: '#E5E5EA', borderRadius: 50 },
 
   statusRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  statusCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 16, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 8 },
+  statusCardMain: { flex: 1.5, backgroundColor: '#FFF', borderRadius: 20, padding: 16, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 8 },
+  statusCardSide: { flex: 1, borderRadius: 20, padding: 16, justifyContent: 'center', alignItems: 'center' },
+  
   label: { fontSize: 11, fontWeight: '700', color: '#8E8E93', textTransform: 'uppercase', marginBottom: 6 },
-  bigQty: { fontSize: 28, fontWeight: '800', color: '#1C1C1E' },
-  smallUnit: { fontSize: 14, fontWeight: '600', color: '#8E8E93' },
-  subQty: { fontSize: 12, color: '#FF9500', fontWeight: '700', marginTop: -2 },
+  bigQty: { fontSize: 32, fontWeight: '800', color: '#1C1C1E' },
+  smallUnit: { fontSize: 16, fontWeight: '600', color: '#8E8E93' },
+  
+  equivalenceBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF8E1', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, marginTop: 8 },
+  equivalenceText: { fontSize: 12, color: '#FF9500', fontWeight: '800' },
+  
   locText: { fontSize: 14, fontWeight: '700' },
 
   datesContainer: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, marginBottom: 24, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 8 },

@@ -1,14 +1,7 @@
-import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  Animated,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { Swipeable } from "react-native-gesture-handler";
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Animated, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Swipeable } from 'react-native-gesture-handler';
 
 type InventoryItemProps = {
   item: {
@@ -18,345 +11,136 @@ type InventoryItemProps = {
     unit: string;
     image?: string | null;
     expiryDate?: Date | string | null;
-    createdAt?: Date | string | null; // Adicionado createdAt
     brand?: string;
     location?: string;
     packSize?: number;
     packUnit?: string;
     category?: string;
-    calories?: number; // Nutrição
-    carbs?: number;
-    protein?: number;
-    fat?: number;
-    fiber?: number;
-    sodium?: number;
-    allergens?: string;
+    allergens?: string; // As tags vêm aqui (ex: "Glúten, Leite")
   };
-  onIncrement?: (id: string) => void;
-  onDecrement?: (id: string) => void;
   onPress: (item: any) => void;
   onEdit: (item: any) => void;
   onDelete: (id: string) => void;
 };
 
-// Categorias que devem ser mostradas sempre como PESO TOTAL (não unidades)
 const BULK_CATEGORIES = ["Carnes", "Frutas", "Legumes", "Grãos", "Frios"];
 
-export function InventoryItemCard({
-  item,
-  onPress,
-  onEdit,
-  onDelete,
-}: InventoryItemProps) {
-  // --- CORES POR LOCAL ---
+export function InventoryItemCard({ item, onPress, onEdit, onDelete }: InventoryItemProps) {
+  
   const getLocationColor = (loc?: string) => {
-    switch (loc) {
-      case "fridge":
-        return "#42A5F5"; // Azul (Geladeira)
-      case "freezer":
-        return "#26C6DA"; // Ciano (Freezer)
-      case "pantry":
-      default:
-        return "#FFB74D"; // Laranja (Armário)
+    switch(loc) {
+      case 'fridge': return '#42A5F5';
+      case 'freezer': return '#26C6DA';
+      default: return '#FFB74D';
     }
   };
 
-  const locationColor = getLocationColor(item.location);
-
-  // --- VENCIMENTO ---
   const getExpiryStatus = (date?: Date | string | null) => {
     if (!date) return null;
     const expiry = new Date(date);
-    expiry.setHours(0, 0, 0, 0);
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil(
-      (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
-    );
+    today.setHours(0,0,0,0);
+    const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-    if (diffDays < 0)
-      return {
-        color: "#FF3B30",
-        bg: "#FFEBEE",
-        icon: "alert-circle",
-        label:
-          Math.abs(diffDays) === 1
-            ? "Venceu ontem"
-            : `Venceu há ${Math.abs(diffDays)} d`,
-      };
-    if (diffDays === 0)
-      return {
-        color: "#D32F2F",
-        bg: "#FFCDD2",
-        icon: "alarm",
-        label: "Vence hoje",
-      };
-    if (diffDays <= 3)
-      return {
-        color: "#FF9500",
-        bg: "#FFF3E0",
-        icon: "warning",
-        label: `Vence em ${diffDays} d`,
-      };
-
-    let label = "";
-    if (diffDays < 30) label = `${diffDays} d`;
-    else if (diffDays < 365) label = `${Math.floor(diffDays / 30)} m`;
-    else label = `${Math.floor(diffDays / 365)} a`;
-
-    return { color: "#34C759", bg: "#E8F5E9", icon: "calendar-outline", label };
+    if (diffDays < 0) return { color: '#FF3B30', bg: '#FFEBEE', label: 'Vencido' };
+    if (diffDays <= 3) return { color: '#FF9500', bg: '#FFF3E0', label: `Vence em ${diffDays}d` };
+    return null;
   };
 
   const status = getExpiryStatus(item.expiryDate);
+  const tags = item.allergens ? item.allergens.split(',').filter(t => t.trim()) : [];
 
-  // --- NOVA LÓGICA DE EXIBIÇÃO ---
-  const renderQuantityDisplay = () => {
-    const qty = item.quantity;
-    const pSize = item.packSize || 0;
-
-    // Verifica se é categoria de granel (Carne, Fruta...)
-    const isBulk = BULK_CATEGORIES.some((cat) => item.category?.includes(cat));
-
-    // LÓGICA 1: GRANEL (Mostra Total Formatado: Kg ou L)
+  const renderQuantity = () => {
+    const isBulk = BULK_CATEGORIES.some(cat => item.category?.includes(cat));
     if (isBulk) {
-      let displayQty = qty;
-      let displayUnit = item.unit;
-
-      // Converte gramas para Kg se passar de 1000
-      if (item.unit === "g" && qty >= 1000) {
-        displayQty = parseFloat((qty / 1000).toFixed(2)); // Ex: 1.5
-        displayUnit = "kg";
-      }
-      // Converte ml para Litros se passar de 1000
-      else if (item.unit === "ml" && qty >= 1000) {
-        displayQty = parseFloat((qty / 1000).toFixed(2));
-        displayUnit = "L";
-      }
-
-      return (
-        <View style={styles.quantityBadge}>
-          <Text style={styles.qtyValue}>{displayQty}</Text>
-          <Text style={styles.qtyUnit}>{displayUnit}</Text>
-        </View>
-      );
+        let q = item.quantity;
+        let u = item.unit;
+        if (u === 'g' && q >= 1000) { q /= 1000; u = 'kg'; }
+        return <View style={styles.qtyBadge}><Text style={styles.qtyValue}>{q}</Text><Text style={styles.qtyUnit}>{u}</Text></View>;
     }
-
-    // LÓGICA 2: EMBALADOS (Mantém sua lógica de Unidade + Sobra)
-    // Se não tiver tamanho de pacote, mostra normal
-    if (!pSize || pSize <= 0) {
-      return (
-        <View style={styles.quantityBadge}>
-          <Text style={styles.qtyValue}>{qty}</Text>
-          <Text style={styles.qtyUnit}>{item.unit}</Text>
-        </View>
-      );
-    }
-
-    const units = Math.floor(qty / pSize);
-    const remainder = parseFloat((qty - units * pSize).toFixed(2));
-
-    if (remainder === 0) {
-      return (
-        <View style={styles.quantityBadge}>
-          <Text style={styles.qtyValue}>{units}</Text>
-          <Text style={styles.qtyUnit}>UN</Text>
-        </View>
-      );
-    }
-
-    if (units === 0) {
-      return (
-        <View style={styles.quantityBadge}>
-          <Text style={styles.qtyValue}>{remainder}</Text>
-          <Text style={styles.qtyUnit}>{item.unit}</Text>
-        </View>
-      );
-    }
-
+    const pSize = item.packSize || 0;
+    if (pSize <= 0) return <View style={styles.qtyBadge}><Text style={styles.qtyValue}>{item.quantity}</Text><Text style={styles.qtyUnit}>{item.unit}</Text></View>;
+    
+    const units = Math.floor(item.quantity / pSize);
+    const rem = parseFloat((item.quantity % pSize).toFixed(2));
     return (
-      <View style={styles.quantityBadgeColumn}>
-        <View style={{ flexDirection: "row", alignItems: "baseline" }}>
-          <Text style={styles.qtyValue}>{units}</Text>
-          <Text style={styles.qtyUnit}> UN</Text>
+        <View style={styles.qtyBadge}>
+            <Text style={styles.qtyValue}>{units || rem}</Text>
+            <Text style={styles.qtyUnit}>{units ? 'UN' : item.unit}</Text>
+            {units > 0 && rem > 0 && <Text style={styles.qtySub}>+{rem}{item.unit}</Text>}
         </View>
-        <Text style={styles.qtyRemainder}>
-          + {remainder}
-          {item.unit}
-        </Text>
-      </View>
     );
   };
 
-  // SWIPE ACTIONS
   const renderRightActions = (_: any, dragX: any) => {
-    const scale = dragX.interpolate({
-      inputRange: [-100, 0],
-      outputRange: [1, 0],
-      extrapolate: "clamp",
-    });
-
+    const scale = dragX.interpolate({ inputRange: [-100, 0], outputRange: [1, 0], extrapolate: 'clamp' });
     return (
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.editBtn]}
-          onPress={() => onEdit(item)}
-        >
-          <Animated.View style={{ transform: [{ scale }] }}>
-            <Ionicons name="pencil" size={24} color="#FFF" />
-            <Text style={styles.actionText}>Editar</Text>
-          </Animated.View>
+      <View style={styles.actions}>
+        <TouchableOpacity style={[styles.actionBtn, {backgroundColor: '#FF9500'}]} onPress={() => onEdit(item)}>
+          <Animated.View style={{ transform: [{ scale }] }}><Ionicons name="pencil" size={20} color="#FFF" /></Animated.View>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.deleteBtn]}
-          onPress={() => onDelete(item.id)}
-        >
-          <Animated.View style={{ transform: [{ scale }] }}>
-            <Ionicons name="trash" size={24} color="#FFF" />
-            <Text style={styles.actionText}>Excluir</Text>
-          </Animated.View>
+        <TouchableOpacity style={[styles.actionBtn, {backgroundColor: '#FF3B30'}]} onPress={() => onDelete(item.id)}>
+          <Animated.View style={{ transform: [{ scale }] }}><Ionicons name="trash" size={20} color="#FFF" /></Animated.View>
         </TouchableOpacity>
       </View>
     );
   };
 
   return (
-    <Swipeable
-      renderRightActions={renderRightActions}
-      containerStyle={styles.swipeContainer}
-    >
-      {/* Envolvemos o View do Card com TouchableOpacity */}
-      <TouchableOpacity
-        activeOpacity={0.9}
-        onPress={() => onPress(item)} // <-- AQUI CHAMA O MODAL
-        style={[styles.card, { borderLeftColor: locationColor }]}
-      >
-        <View style={styles.iconBox}>
-          {item.image ? (
-            <Image source={{ uri: item.image }} style={styles.cardImage} />
-          ) : (
-            <Ionicons name="cube-outline" size={24} color="#007AFF" />
+    <Swipeable renderRightActions={renderRightActions} containerStyle={styles.swipe}>
+      <TouchableOpacity activeOpacity={0.9} onPress={() => onPress(item)} style={[styles.card, { borderLeftColor: getLocationColor(item.location) }]}>
+        <View style={styles.imageBox}>
+          {item.image ? <Image source={{ uri: item.image }} style={styles.img} /> : <Ionicons name="cube-outline" size={24} color="#CCC" />}
+        </View>
+
+        <View style={styles.main}>
+          <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.brand}>{item.brand || 'Genérico'}</Text>
+          
+          {/* --- NOVO: CONTAINER DE TAGS DE ALERTA --- */}
+          {tags.length > 0 && (
+            <View style={styles.tagsRow}>
+              {tags.map((tag, i) => (
+                <View key={i} style={styles.tag}>
+                  <Text style={styles.tagText}>{tag.trim()}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {status && (
+            <View style={[styles.expiry, { backgroundColor: status.bg }]}>
+              <Text style={[styles.expiryText, { color: status.color }]}>{status.label}</Text>
+            </View>
           )}
         </View>
 
-        <View style={styles.content}>
-          <Text style={styles.title} numberOfLines={1}>
-            {item.name}
-          </Text>
-          <View style={styles.metaColumn}>
-            <Text style={styles.brandText}>
-              {item.brand || "Genérico"}
-              {BULK_CATEGORIES.some((cat) => item.category?.includes(cat))
-                ? ` • ${item.category}`
-                : ""}
-            </Text>
-            {status ? (
-              <View
-                style={[styles.expiryBadge, { backgroundColor: status.bg }]}
-              >
-                <Ionicons
-                  name={status.icon as any}
-                  size={10}
-                  color={status.color}
-                  style={{ marginRight: 3 }}
-                />
-                <Text style={[styles.expiryText, { color: status.color }]}>
-                  {status.label}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        {renderQuantityDisplay()}
+        {renderQuantity()}
       </TouchableOpacity>
     </Swipeable>
   );
 }
 
 const styles = StyleSheet.create({
-  swipeContainer: { marginBottom: 10, borderRadius: 16, overflow: "hidden" },
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFF",
-    padding: 12,
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
-    borderLeftWidth: 6,
-    borderTopWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: "#F2F2F7",
-  },
-  iconBox: {
-    width: 50,
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: "#F2F2F7",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-    overflow: "hidden",
-    marginLeft: 4,
-  },
-  cardImage: { width: "100%", height: "100%", resizeMode: "cover" },
-  content: { flex: 1, marginRight: 8, justifyContent: "center" },
-  title: { fontSize: 16, fontWeight: "700", color: "#1C1C1E", marginBottom: 4 },
-  metaColumn: { flexDirection: "column", alignItems: "flex-start", gap: 4 },
-  brandText: { fontSize: 12, color: "#8E8E93", fontWeight: "500" },
+  swipe: { marginBottom: 10, borderRadius: 16, overflow: 'hidden' },
+  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 12, borderRadius: 16, borderLeftWidth: 5, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
+  imageBox: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#F2F2F7', justifyContent: 'center', alignItems: 'center', marginRight: 12, overflow: 'hidden' },
+  img: { width: '100%', height: '100%' },
+  main: { flex: 1, justifyContent: 'center' },
+  name: { fontSize: 16, fontWeight: '700', color: '#1C1C1E' },
+  brand: { fontSize: 12, color: '#8E8E93', marginBottom: 4 },
+  
+  // Estilos das Tags
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 2, marginBottom: 4 },
+  tag: { backgroundColor: '#FF704320', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 0.5, borderColor: '#FF7043' },
+  tagText: { fontSize: 9, color: '#FF7043', fontWeight: '800', textTransform: 'uppercase' },
 
-  expiryBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  expiryText: { fontSize: 10, fontWeight: "700" },
-
-  quantityBadge: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F2F2F7",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    minWidth: 60,
-  },
-  quantityBadgeColumn: {
-    alignItems: "flex-end",
-    justifyContent: "center",
-    backgroundColor: "#F2F2F7",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    minWidth: 60,
-  },
-  qtyValue: { fontSize: 16, fontWeight: "800", color: "#1C1C1E" },
-  qtyUnit: {
-    fontSize: 9,
-    color: "#8E8E93",
-    fontWeight: "700",
-    textTransform: "uppercase",
-  },
-  qtyRemainder: {
-    fontSize: 9,
-    color: "#FF9500",
-    fontWeight: "600",
-    marginTop: -2,
-  },
-
-  actionsContainer: { flexDirection: "row", width: 150, height: "100%" },
-  actionBtn: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    height: "100%",
-  },
-  editBtn: { backgroundColor: "#FF9500" },
-  deleteBtn: { backgroundColor: "#FF3B30" },
-  actionText: { color: "#FFF", fontSize: 11, fontWeight: "700", marginTop: 4 },
+  qtyBadge: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2F2F7', padding: 8, borderRadius: 12, minWidth: 55 },
+  qtyValue: { fontSize: 15, fontWeight: '800', color: '#1C1C1E' },
+  qtyUnit: { fontSize: 9, color: '#8E8E93', fontWeight: '700' },
+  qtySub: { fontSize: 8, color: '#FF9500', fontWeight: '600' },
+  expiry: { alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 4 },
+  expiryText: { fontSize: 10, fontWeight: '700' },
+  actions: { flexDirection: 'row', width: 120 },
+  actionBtn: { flex: 1, justifyContent: 'center', alignItems: 'center' }
 });

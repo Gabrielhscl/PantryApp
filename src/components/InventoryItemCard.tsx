@@ -1,266 +1,260 @@
-import React, { memo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  Animated,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { Swipeable } from "react-native-gesture-handler";
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Animated } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Swipeable } from 'react-native-gesture-handler';
 
-type ItemProps = {
-  item: any;
-  onIncrement: (id: string, current: number) => void;
-  onDecrement: (id: string, current: number) => void;
+type InventoryItemProps = {
+  item: {
+    id: string;
+    name: string;
+    quantity: number;
+    unit: string;
+    image?: string | null;
+    expiryDate?: Date | string | null;
+    brand?: string;
+    location?: string;
+    packSize?: number;
+    packUnit?: string;
+  };
+  onIncrement?: (id: string) => void;
+  onDecrement?: (id: string) => void;
   onEdit: (item: any) => void;
   onDelete: (id: string) => void;
 };
 
-// 1. Mapeamento de nomes para exibição (Isto resolve o seu problema)
-const LOCATION_NAMES: Record<string, string> = {
-  fridge: "Geladeira",
-  freezer: "Freezer",
-  pantry: "Armário",
-};
+export function InventoryItemCard({ item, onEdit, onDelete }: InventoryItemProps) {
+  
+  // --- CORES POR LOCALIZAÇÃO ---
+  const getLocationColor = (loc?: string) => {
+    switch(loc) {
+      case 'fridge': return '#42A5F5'; // Azul (Geladeira)
+      case 'freezer': return '#26C6DA'; // Ciano (Freezer)
+      case 'pantry': 
+      default: return '#FFB74D'; // Laranja Suave (Armário)
+    }
+  };
 
-export const InventoryItemCard = memo(
-  ({ item, onIncrement, onDecrement, onEdit, onDelete }: ItemProps) => {
-    const getExpiryStatus = (dateString?: string | Date) => {
-      if (!dateString) return null;
-      const today = new Date();
-      const expiry = new Date(dateString);
-      today.setHours(0, 0, 0, 0);
-      expiry.setHours(0, 0, 0, 0);
-      const days = Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
+  const locationColor = getLocationColor(item.location);
 
-      if (days < 0)
-        return {
-          text: `Venceu há ${Math.abs(days)}d`,
-          color: "#d32f2f",
-          bgColor: "#ffebee",
-          icon: "alert-circle",
-        };
-      if (days === 0)
-        return {
-          text: "Vence HOJE",
-          color: "#c62828",
-          bgColor: "#ffebee",
-          icon: "alert-circle",
-        };
-      if (days <= 30)
-        return {
-          text: `${days} dias`,
-          color: "#e65100",
-          bgColor: "#fff3e0",
-          icon: "hourglass-outline",
-        };
-      const m = Math.floor(days / 30);
-      return {
-        text: `${m} meses`,
-        color: "#2e7d32",
-        bgColor: "#e8f5e9",
-        icon: "calendar-outline",
-      };
-    };
+  // --- LÓGICA DE VENCIMENTO (Badge Interno) ---
+  const getExpiryStatus = (date?: Date | string | null) => {
+    if (!date) return null;
+    
+    const expiry = new Date(date);
+    expiry.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const diffTime = expiry.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    const status = getExpiryStatus(item.expiryDate);
-    const alertTags = item.allergens
-      ? item.allergens.split(",").filter((t: string) => t.trim() !== "")
-      : [];
+    if (diffDays < 0) {
+        const daysPast = Math.abs(diffDays);
+        return { color: '#FF3B30', bg: '#FFEBEE', icon: 'alert-circle', label: daysPast === 1 ? 'Venceu ontem' : `Venceu há ${daysPast} d` };
+    }
+    if (diffDays === 0) return { color: '#D32F2F', bg: '#FFCDD2', icon: 'alarm', label: 'Vence hoje' };
+    if (diffDays <= 3) return { color: '#FF9500', bg: '#FFF3E0', icon: 'warning', label: `Vence em ${diffDays} d` };
 
-    const renderRightActions = (progress: any, dragX: any) => {
-      const scale = dragX.interpolate({
-        inputRange: [-100, 0],
-        outputRange: [1, 0],
-        extrapolate: "clamp",
-      });
+    // Futuro
+    let label = '';
+    if (diffDays < 30) label = `${diffDays} d`;
+    else if (diffDays < 365) {
+        const months = Math.floor(diffDays / 30);
+        label = `${months} ${months === 1 ? 'mês' : 'meses'}`;
+    } else {
+        const years = Math.floor(diffDays / 365);
+        label = `${years} ${years === 1 ? 'ano' : 'anos'}`;
+    }
+
+    return { color: '#34C759', bg: '#E8F5E9', icon: 'calendar-outline', label };
+  };
+
+  const status = getExpiryStatus(item.expiryDate);
+
+  // --- LÓGICA DE QUANTIDADE ---
+  const renderQuantityDisplay = () => {
+    const qty = item.quantity;
+    const pSize = item.packSize || 0;
+    
+    if (!pSize || pSize <= 0) {
       return (
-        <TouchableOpacity
-          onPress={() => onDelete(item.id)}
-          style={[styles.actionBtn, styles.deleteBtn]}
-        >
-          <Animated.View
-            style={[styles.actionContent, { transform: [{ scale }] }]}
-          >
-            <Ionicons name="trash" size={28} color="white" />
-            <Text style={styles.actionText}>Excluir</Text>
-          </Animated.View>
-        </TouchableOpacity>
+        <View style={styles.quantityBadge}>
+           <Text style={styles.qtyValue}>{qty}</Text>
+           <Text style={styles.qtyUnit}>{item.unit}</Text>
+        </View>
       );
-    };
+    }
 
-    const renderLeftActions = (progress: any, dragX: any) => {
-      const scale = dragX.interpolate({
-        inputRange: [0, 100],
-        outputRange: [0, 1],
-        extrapolate: "clamp",
-      });
+    const units = Math.floor(qty / pSize);
+    const remainder = parseFloat((qty - (units * pSize)).toFixed(2));
 
-      return (
-        <TouchableOpacity
-          onPress={() => onEdit(item)}
-          style={[styles.actionBtn, styles.editSwipeBtn]}
-        >
-          <Animated.View
-            style={[styles.actionContent, { transform: [{ scale }] }]}
-          >
-            <Ionicons name="pencil" size={28} color="white" />
+    if (remainder === 0) {
+       return (
+        <View style={styles.quantityBadge}>
+           <Text style={styles.qtyValue}>{units}</Text>
+           <Text style={styles.qtyUnit}>UN</Text>
+        </View>
+       );
+    }
+
+    if (units === 0) {
+       return (
+        <View style={styles.quantityBadge}>
+           <Text style={styles.qtyValue}>{remainder}</Text>
+           <Text style={styles.qtyUnit}>{item.unit}</Text>
+        </View>
+       );
+    }
+
+    return (
+      <View style={styles.quantityBadgeColumn}>
+         <View style={{flexDirection:'row', alignItems:'baseline'}}>
+            <Text style={styles.qtyValue}>{units}</Text>
+            <Text style={styles.qtyUnit}> UN</Text>
+         </View>
+         <Text style={styles.qtyRemainder}>+ {remainder}{item.unit}</Text>
+      </View>
+    );
+  };
+
+  const renderRightActions = (_: any, dragX: any) => {
+    const scale = dragX.interpolate({
+      inputRange: [-100, 0],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    });
+
+    return (
+      <View style={styles.actionsContainer}>
+        <TouchableOpacity style={[styles.actionBtn, styles.editBtn]} onPress={() => onEdit(item)}>
+          <Animated.View style={{ transform: [{ scale }] }}>
+            <Ionicons name="pencil" size={24} color="#FFF" />
             <Text style={styles.actionText}>Editar</Text>
           </Animated.View>
         </TouchableOpacity>
-      );
-    };
 
-    return (
-      <Swipeable
-        renderLeftActions={renderLeftActions}
-        renderRightActions={renderRightActions}
-        leftThreshold={40}
-        rightThreshold={40}
-      >
-        <View
-          style={[
-            styles.card,
-            status ? { borderLeftWidth: 5, borderLeftColor: status.color } : {},
-          ]}
-        >
-          <Image
-            source={
-              item.image
-                ? { uri: item.image }
-                : require("../../assets/icon.png")
-            }
-            style={styles.image}
-          />
+        <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => onDelete(item.id)}>
+          <Animated.View style={{ transform: [{ scale }] }}>
+            <Ionicons name="trash" size={24} color="#FFF" />
+            <Text style={styles.actionText}>Excluir</Text>
+          </Animated.View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
-          <View style={styles.info}>
-            <Text style={styles.name} numberOfLines={1}>
-              {item.name}
+  return (
+    <Swipeable renderRightActions={renderRightActions} containerStyle={styles.swipeContainer}>
+      <View style={[styles.card, { borderLeftColor: locationColor }]}>
+        
+        {/* FOTO */}
+        <View style={styles.iconBox}>
+          {item.image ? (
+            <Image source={{ uri: item.image }} style={styles.cardImage} />
+          ) : (
+            <Ionicons name="cube-outline" size={24} color="#007AFF" />
+          )}
+        </View>
+
+        {/* INFO PRINCIPAL */}
+        <View style={styles.content}>
+          <Text style={styles.title} numberOfLines={1}>{item.name}</Text>
+          
+          <View style={styles.metaColumn}>
+            <Text style={styles.brandText}>
+                {item.brand || "Genérico"}
             </Text>
-
-            {/* 2. Tradução aplicada aqui embaixo */}
-            <Text style={styles.brand}>
-              <Ionicons
-                name={
-                  item.location === "fridge"
-                    ? "thermometer-outline"
-                    : item.location === "freezer"
-                      ? "snow-outline"
-                      : "cube-outline"
-                }
-                size={12}
-                color="#666666"
-                style={{ marginRight: 4 }}
-              />
-              {LOCATION_NAMES[item.location] || item.location}{" "}
-              {item.brand ? `• ${item.brand}` : ""}
-            </Text>
-
-            <View style={styles.tagsRow}>
-              {status && (
-                <View
-                  style={[
-                    styles.expiryTag,
-                    { backgroundColor: status.bgColor },
-                  ]}
-                >
-                  <Text style={[styles.expiryText, { color: status.color }]}>
-                    {status.text}
-                  </Text>
-                </View>
-              )}
-              {alertTags.slice(0, 1).map((tag, i) => (
-                <View key={i} style={styles.alertTag}>
-                  <Text style={styles.alertTagText}>{tag}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.qtyControl}>
-            <TouchableOpacity
-              onPress={() => onDecrement(item.id, item.quantity)}
-              style={styles.btnMini}
-            >
-              <Ionicons name="remove" size={18} color="#d32f2f" />
-            </TouchableOpacity>
-            <View style={{ alignItems: "center", minWidth: 30 }}>
-              <Text style={styles.qtyText}>{item.quantity}</Text>
-              <Text style={styles.unitText}>{item.unit}</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => onIncrement(item.id, item.quantity)}
-              style={styles.btnMini}
-            >
-              <Ionicons name="add" size={18} color="#388e3c" />
-            </TouchableOpacity>
+            
+            {/* BADGE DE VALIDADE (Pequeno) */}
+            {status ? (
+              <View style={[styles.expiryBadge, { backgroundColor: status.bg }]}>
+                <Ionicons name={status.icon as any} size={10} color={status.color} style={{marginRight: 3}} />
+                <Text style={[styles.expiryText, { color: status.color }]}>{status.label}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
-      </Swipeable>
-    );
-  },
-);
+
+        {/* QUANTIDADE */}
+        {renderQuantityDisplay()}
+
+      </View>
+    </Swipeable>
+  );
+}
 
 const styles = StyleSheet.create({
+  swipeContainer: {
+    marginBottom: 10,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
   card: {
-    flexDirection: "row",
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 8,
-    alignItems: "center",
-    elevation: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    padding: 12,
+    borderRadius: 16,
+    shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 2,
+    
+    // --- BORDA ESQUERDA GROSSA ---
+    borderLeftWidth: 6, // Define a espessura da cor do local
+    // As outras bordas ficam fininhas
+    borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1,
+    borderColor: '#F2F2F7', 
   },
-  image: { width: 50, height: 50, borderRadius: 8, backgroundColor: "#eee" },
-  info: { flex: 1, marginLeft: 10, justifyContent: "center" },
-  name: { fontWeight: "bold", fontSize: 15, color: "#333" },
-  brand: { fontSize: 11, color: "#666", textTransform: "capitalize" },
-  tagsRow: { flexDirection: "row", marginTop: 4, gap: 4 },
-  expiryTag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  expiryText: { fontSize: 10, fontWeight: "700" },
-  alertTag: {
-    backgroundColor: "#fff3e0",
-    paddingHorizontal: 5,
+  iconBox: { 
+    width: 50, height: 50, borderRadius: 14, 
+    backgroundColor: '#F2F2F7', 
+    justifyContent: 'center', alignItems: 'center', 
+    marginRight: 12, overflow: 'hidden',
+    marginLeft: 4 // Afasta um pouco da borda colorida
+  },
+  cardImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  
+  content: { flex: 1, marginRight: 8, justifyContent: 'center' },
+  title: { fontSize: 16, fontWeight: '700', color: '#1C1C1E', marginBottom: 4 },
+  
+  metaColumn: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  brandText: { fontSize: 12, color: '#8E8E93', fontWeight: '500' },
+  
+  // Badge de Validade Compacto
+  expiryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 6,
   },
-  alertTagText: { fontSize: 9, color: "#e65100", fontWeight: "bold" },
-  qtyControl: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
-    padding: 2,
-  },
-  btnMini: { padding: 6 },
-  qtyText: { fontSize: 13, fontWeight: "bold" },
-  unitText: { fontSize: 9, color: "#888" },
-  actionBtn: {
-    justifyContent: "center",
-    width: 100,
-    marginBottom: 8,
+  expiryText: { fontSize: 10, fontWeight: '700' },
+
+  // Badge de Quantidade
+  quantityBadge: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F2F2F7',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 12,
+    minWidth: 55,
   },
-  deleteBtn: {
-    backgroundColor: "#d32f2f",
-    alignItems: "flex-start",
-    paddingLeft: 25,
-    marginLeft: -15,
+  quantityBadgeColumn: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    backgroundColor: '#F2F2F7',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    minWidth: 55,
   },
-  editSwipeBtn: {
-    backgroundColor: "#007AFF",
-    alignItems: "flex-end",
-    paddingRight: 25,
-    marginRight: -15,
-  },
-  actionContent: { alignItems: "center", justifyContent: "center", width: 60 },
-  actionText: {
-    color: "white",
-    fontSize: 12,
-    fontWeight: "bold",
-    marginTop: 4,
-    textAlign: "center",
-  },
+  qtyValue: { fontSize: 16, fontWeight: '800', color: '#1C1C1E' },
+  qtyUnit: { fontSize: 9, color: '#8E8E93', fontWeight: '700', textTransform: 'uppercase' },
+  qtyRemainder: { fontSize: 9, color: '#FF9500', fontWeight: '600', marginTop: -2 },
+
+  // Actions
+  actionsContainer: { flexDirection: 'row', width: 150, height: '100%' },
+  actionBtn: { flex: 1, justifyContent: 'center', alignItems: 'center', height: '100%' },
+  editBtn: { backgroundColor: '#FF9500' },
+  deleteBtn: { backgroundColor: '#FF3B30' },
+  actionText: { color: '#FFF', fontSize: 11, fontWeight: '700', marginTop: 4 },
 });

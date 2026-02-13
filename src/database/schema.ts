@@ -67,3 +67,15 @@ export const recipeIngredients = sqliteTable('recipe_ingredients', {
   unit: text('unit').notNull(),
   isOptional: integer('is_optional', { mode: 'boolean' }).default(false),
 });
+
+export const shoppingListItems = sqliteTable('shopping_list_items', {
+  id: text('id').primaryKey(),
+  productId: text('product_id').references(() => products.id),
+  name: text('name').notNull(),
+  quantity: real('quantity').notNull(),
+  unit: text('unit').notNull(),
+  category: text('category'),
+  isChecked: integer('is_checked', { mode: 'boolean' }).default(false),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});

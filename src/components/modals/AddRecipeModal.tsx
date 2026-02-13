@@ -4,350 +4,649 @@ import {
   Text,
   StyleSheet,
   Modal,
-  TextInput,
   TouchableOpacity,
+  TextInput,
   ScrollView,
+  Alert,
   KeyboardAvoidingView,
   Platform,
-  Alert,
-  Vibration,
-  FlatList
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Autocomplete } from "../Autocomplete"; 
-import { RecipeRepository } from "../../repositories/recipeRepository";
-
-// --- LISTA PADRÃO DE UNIDADES CULINÁRIAS ---
-const STANDARD_UNITS = [
-  "un", "g", "kg", "ml", "L", 
-  "xícara", "colher (sopa)", "colher (chá)", 
-  "lata", "pacote", "fatia", "dente"
-];
+import * as ImagePicker from "expo-image-picker"; // Importar o ImagePicker
+import { Autocomplete } from "../Autocomplete";
 
 type Props = {
   visible: boolean;
   onClose: () => void;
-  onSaveSuccess: () => void;
-  initialData?: any;
+  onSave: (data: any) => void;
+  recipeToEdit?: any | null;
 };
 
-// Componente de Contador (Mantido)
-const CounterInput = ({ label, value, onChange, step = 1, unit = "" }: any) => (
-  <View style={styles.counterContainer}>
-    <Text style={styles.counterLabel}>{label}</Text>
-    <View style={styles.counterControls}>
-      <TouchableOpacity 
-        style={styles.counterBtn} 
-        onPress={() => {
-          const newValue = Math.max(1, parseInt(value || "0") - step);
-          onChange(newValue.toString());
-          Vibration.vibrate(10);
-        }}
-      >
-        <Ionicons name="remove" size={20} color="#007AFF" />
-      </TouchableOpacity>
-      
-      <Text style={styles.counterValue}>{value || "0"} <Text style={styles.counterUnit}>{unit}</Text></Text>
-      
-      <TouchableOpacity 
-        style={styles.counterBtn} 
-        onPress={() => {
-          const newValue = parseInt(value || "0") + step;
-          onChange(newValue.toString());
-          Vibration.vibrate(10);
-        }}
-      >
-        <Ionicons name="add" size={20} color="#007AFF" />
-      </TouchableOpacity>
-    </View>
-  </View>
-);
+const UNITS = [
+  "un",
+  "kg",
+  "g",
+  "L",
+  "ml",
+  "xícara",
+  "c. sopa",
+  "c. chá",
+  "c. café",
+  "fatia",
+  "pitada",
+  "lata",
+  "dente",
+  "folha",
+  "pct",
+];
 
-export function AddRecipeModal({ visible, onClose, onSaveSuccess, initialData }: Props) {
-  // Estados do Formulário
+export function AddRecipeModal({
+  visible,
+  onClose,
+  onSave,
+  recipeToEdit,
+}: Props) {
   const [name, setName] = useState("");
-  const [prepTime, setPrepTime] = useState("30");
-  const [servings, setServings] = useState("2");
-  const [instructions, setInstructions] = useState("");
-  const [recipeIngredients, setRecipeIngredients] = useState<any[]>([]);
-  const [ingSearch, setIngSearch] = useState("");
-
-  // Controle do Seletor de Unidade
-  const [unitPickerVisible, setUnitPickerVisible] = useState(false);
-  const [targetIngIndex, setTargetIngIndex] = useState<number | null>(null);
+  const [prepTime, setPrepTime] = useState("");
+  const [servings, setServings] = useState("");
+  const [image, setImage] = useState<string | null>(null); // Estado para a foto
+  const [steps, setSteps] = useState<string[]>([]);
+  const [currentStep, setCurrentStep] = useState("");
+  const [ingredients, setIngredients] = useState<any[]>([]);
+  const [currentProduct, setCurrentProduct] = useState<any>(null);
+  const [currentQty, setCurrentQty] = useState("");
+  const [currentUnit, setCurrentUnit] = useState("un");
+  const [query, setQuery] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (visible) {
-      if (initialData) {
-        setName(initialData.name);
-        setPrepTime(initialData.preparationTime?.toString() || "30");
-        setServings(initialData.servings?.toString() || "2");
-        setInstructions(initialData.instructions || "");
-        setRecipeIngredients(initialData.ingredients || []);
+      if (recipeToEdit) {
+        setName(recipeToEdit.name);
+        setPrepTime(
+          recipeToEdit.preparationTime
+            ? String(recipeToEdit.preparationTime)
+            : "",
+        );
+        setServings(recipeToEdit.servings ? String(recipeToEdit.servings) : "");
+        setImage(recipeToEdit.image || null); // Carregar imagem existente
+        if (recipeToEdit.instructions) {
+          setSteps(
+            recipeToEdit.instructions
+              .split("\n")
+              .filter((s: string) => s.trim().length > 0),
+          );
+        } else {
+          setSteps([]);
+        }
+        const formattedIngs = (recipeToEdit.ingredients || []).map(
+          (ing: any) => ({
+            productId: ing.productId,
+            name: ing.name,
+            category: ing.category || "Outros",
+            unit: ing.unit,
+            quantity: ing.quantity,
+            isOptional: !!ing.isOptional,
+          }),
+        );
+        setIngredients(formattedIngs);
       } else {
         resetForm();
       }
     }
-  }, [visible, initialData]);
+  }, [visible, recipeToEdit]);
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.7,
+    });
+
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+    }
+  };
 
   const resetForm = () => {
-    setName(""); setPrepTime("30"); setServings("2");
-    setInstructions(""); setRecipeIngredients([]); setIngSearch("");
+    setName("");
+    setPrepTime("");
+    setServings("");
+    setImage(null)
+    setSteps([]);
+    setCurrentStep("");
+    setIngredients([]);
+    resetIngredientInput();
   };
 
-  const handleAddIng = (product: any) => {
-    if (recipeIngredients.some(i => i.productId === product.id)) {
-      return Alert.alert("Ops", "Este item já está na lista.");
+  const resetIngredientInput = () => {
+    setCurrentProduct(null);
+    setCurrentQty("");
+    setCurrentUnit("un");
+    setQuery("");
+    setEditingIndex(null);
+  };
+
+  const addStep = () => {
+    if (!currentStep.trim()) return;
+    setSteps([...steps, currentStep.trim()]);
+    setCurrentStep("");
+  };
+
+  const removeStep = (index: number) => {
+    setSteps(steps.filter((_, i) => i !== index));
+  };
+
+  const handleSelectProduct = (product: any) => {
+    setCurrentProduct(product);
+    setQuery(product.name);
+    const defUnit = product.defaultUnit || product.packUnit;
+    setCurrentUnit(defUnit && UNITS.includes(defUnit) ? defUnit : "un");
+  };
+
+  const addOrUpdateIngredient = () => {
+    if (!currentProduct) return Alert.alert("Selecione um produto");
+    if (!currentQty) return Alert.alert("Informe a quantidade");
+
+    const newIng = {
+      productId: currentProduct.id || currentProduct.productId,
+      name: currentProduct.name,
+      category: currentProduct.category || "Outros",
+      unit: currentUnit,
+      quantity: parseFloat(currentQty),
+      isOptional: false,
+    };
+
+    if (editingIndex !== null) {
+      const updatedList = [...ingredients];
+      updatedList[editingIndex] = newIng;
+      setIngredients(updatedList);
+    } else {
+      setIngredients([...ingredients, newIng]);
     }
-    setRecipeIngredients([...recipeIngredients, { 
-        productId: product.id, 
-        name: product.name, 
-        quantity: "", 
-        unit: product.defaultUnit || "un"
-    }]);
-    setIngSearch("");
+    resetIngredientInput();
   };
 
-  const updateQuantity = (index: number, value: string) => {
-    const list = [...recipeIngredients];
-    list[index].quantity = value;
-    setRecipeIngredients(list);
+  const handleEditIngredient = (ing: any, index: number) => {
+    setCurrentProduct({
+      id: ing.productId,
+      name: ing.name,
+      category: ing.category,
+    });
+    setQuery(ing.name);
+    setCurrentQty(String(ing.quantity));
+    setCurrentUnit(ing.unit);
+    setEditingIndex(index);
   };
 
-  const openUnitPicker = (index: number) => {
-    setTargetIngIndex(index);
-    setUnitPickerVisible(true);
+  const removeIngredient = (index: number) => {
+    setIngredients(ingredients.filter((_, i) => i !== index));
+    if (editingIndex === index) resetIngredientInput();
   };
 
-  const selectUnit = (unit: string) => {
-    if (targetIngIndex !== null) {
-      const list = [...recipeIngredients];
-      list[targetIngIndex].unit = unit;
-      setRecipeIngredients(list);
-    }
-    setUnitPickerVisible(false);
-    setTargetIngIndex(null);
+  const handleSave = () => {
+    if (!name.trim()) return Alert.alert("Dê um nome para a receita");
+    onSave({
+      name,
+      preparationTime: parseInt(prepTime) || 0,
+      servings: parseInt(servings) || 1,
+      instructions: steps.join("\n"),
+      ingredients,
+      image, // Enviar a imagem para o repositório
+    });
+    resetForm();
+    onClose();
   };
 
-  const handleSave = async () => {
-    if (!name.trim()) return Alert.alert("Faltou o nome", "Dê um nome para a receita.");
-    if (recipeIngredients.length === 0) return Alert.alert("Vazio", "Adicione ingredientes.");
-
-    const invalid = recipeIngredients.find(i => !i.quantity || parseFloat(i.quantity) <= 0);
-    if (invalid) return Alert.alert("Quantidade", `Quanto de "${invalid.name}"?`);
-
-    try {
-      if (initialData) await RecipeRepository.deleteRecipe(initialData.id);
-
-      await RecipeRepository.saveRecipe({
-        name,
-        instructions,
-        preparationTime: parseInt(prepTime),
-        servings: parseInt(servings)
-      }, recipeIngredients);
-
-      resetForm();
-      onSaveSuccess();
-      onClose();
-    } catch (error) {
-      Alert.alert("Erro", "Falha ao salvar receita.");
-    }
-  };
+  const groupedIngredients = ingredients.reduce((acc: any, ing) => {
+    const cat = ing.category || "Outros";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(ing);
+    return acc;
+  }, {});
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{initialData ? "Editar Prato" : "Criar Prato"}</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeText}>Cancelar</Text>
-          </TouchableOpacity>
-        </View>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <View style={styles.overlay}>
+        {/* Removi o TouchableWithoutFeedback externo para não travar o scroll */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.content}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
+        >
+          <View style={styles.header}>
+            <Text style={styles.title}>
+              {recipeToEdit ? "Editar Receita" : "Nova Receita"}
+            </Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
 
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex: 1}}>
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={styles.scrollContent}>
-            
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>NOME DA RECEITA</Text>
-              <TextInput 
-                style={styles.nameInput} 
-                placeholder="Ex: Torta de Frango" 
-                value={name} 
-                onChangeText={setName} 
-                placeholderTextColor="#C7C7CC"
-              />
-            </View>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 120 }} // Espaço extra para o teclado não cobrir o botão de salvar
+          >
+            {/* SEÇÃO DE FOTO */}
+                  <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
+                      {image ? (
+                          <Image source={{ uri: image }} style={styles.previewImage} />
+                      ) : (
+                          <View style={styles.imagePlaceholder}>
+                              <Ionicons name="camera-outline" size={32} color="#007AFF" />
+                              <Text style={styles.imagePlaceholderText}>Adicionar Foto do Prato</Text>
+                          </View>
+                      )}
+                  </TouchableOpacity>
+            {/* Nome */}
+            <Text style={styles.label}>Nome do Prato</Text>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Ex: Bolo de Cenoura"
+            />
 
+            {/* Tempo e Porções */}
             <View style={styles.row}>
-              <CounterInput label="TEMPO (MIN)" value={prepTime} onChange={setPrepTime} step={5} unit="min" />
-              <View style={{width: 15}} />
-              <CounterInput label="PORÇÕES" value={servings} onChange={setServings} step={1} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Tempo (min)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={prepTime}
+                  onChangeText={setPrepTime}
+                  keyboardType="numeric"
+                  placeholder="40"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Porções</Text>
+                <TextInput
+                  style={styles.input}
+                  value={servings}
+                  onChangeText={setServings}
+                  keyboardType="numeric"
+                  placeholder="4"
+                />
+              </View>
             </View>
 
-            <View style={styles.section}>
-              <Text style={styles.label}>INGREDIENTES</Text>
-              <Autocomplete 
-                value={ingSearch} 
-                onChangeText={setIngSearch} 
-                onSelect={handleAddIng} 
-                placeholder="Busque ingrediente..." 
-              />
-
-              <View style={styles.ingredientsContainer}>
-                {recipeIngredients.length === 0 ? (
-                  <Text style={styles.emptyHint}>A lista está vazia.</Text>
-                ) : (
-                  recipeIngredients.map((ing, i) => (
-                    <View key={i} style={styles.ingCard}>
-                      <Text style={styles.ingName} numberOfLines={1}>{ing.name}</Text>
-                      
-                      {/* INPUT DUPLO: QUANTIDADE + UNIDADE PICKER */}
-                      <View style={styles.ingInputsRow}>
-                        <TextInput 
-                          placeholder="0"
-                          keyboardType="numeric"
-                          style={styles.qtyInput}
-                          value={ing.quantity ? String(ing.quantity) : ""}
-                          onChangeText={(v) => updateQuantity(i, v)}
-                        />
-                        
-                        {/* Botão que abre a lista de unidades */}
-                        <TouchableOpacity style={styles.unitSelector} onPress={() => openUnitPicker(i)}>
-                          <Text style={styles.unitText}>{ing.unit}</Text>
-                          <Ionicons name="chevron-down" size={12} color="#007AFF" />
-                        </TouchableOpacity>
-                      </View>
-                      
-                      <TouchableOpacity 
-                        style={styles.trashBtn} 
-                        onPress={() => {
-                          setRecipeIngredients(recipeIngredients.filter((_, idx) => idx !== i));
-                          Vibration.vibrate(10);
-                        }}
+            {/* Ingredientes Form */}
+            <Text style={styles.sectionTitle}>Ingredientes</Text>
+            <View
+              style={[styles.box, editingIndex !== null && styles.boxEditing]}
+            >
+              {editingIndex !== null && (
+                <Text style={styles.editingLabel}>Editando Ingrediente</Text>
+              )}
+              <View style={{ zIndex: 10, marginBottom: 10 }}>
+                <Autocomplete
+                  placeholder="Buscar ingrediente..."
+                  value={query}
+                  onChangeText={setQuery}
+                  onSelect={handleSelectProduct}
+                />
+              </View>
+              <View style={styles.rowCenter}>
+                <TextInput
+                  style={styles.qtyInput}
+                  value={currentQty}
+                  onChangeText={setCurrentQty}
+                  placeholder="Qtd"
+                  keyboardType="numeric"
+                />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.unitScroll}
+                >
+                  {UNITS.map((u) => (
+                    <TouchableOpacity
+                      key={u}
+                      style={[
+                        styles.chip,
+                        currentUnit === u && styles.chipActive,
+                      ]}
+                      onPress={() => setCurrentUnit(u)}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          currentUnit === u && styles.chipTextActive,
+                        ]}
                       >
-                        <Ionicons name="trash-outline" size={20} color="#FF3B30" />
-                      </TouchableOpacity>
-                    </View>
-                  ))
+                        {u}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <TouchableOpacity
+                  style={[
+                    styles.iconBtn,
+                    editingIndex !== null && styles.updateBtn,
+                  ]}
+                  onPress={addOrUpdateIngredient}
+                >
+                  <Ionicons
+                    name={editingIndex !== null ? "checkmark" : "add"}
+                    size={24}
+                    color="#FFF"
+                  />
+                </TouchableOpacity>
+                {editingIndex !== null && (
+                  <TouchableOpacity
+                    style={styles.cancelBtn}
+                    onPress={resetIngredientInput}
+                  >
+                    <Ionicons name="close" size={20} color="#FF3B30" />
+                  </TouchableOpacity>
                 )}
               </View>
             </View>
 
-            <View style={styles.section}>
-              <View style={styles.labelRow}>
-                <Text style={styles.label}>MODO DE PREPARO</Text>
-              </View>
-              <TextInput 
-                style={styles.textArea} 
-                multiline 
-                textAlignVertical="top"
-                value={instructions} 
-                onChangeText={setInstructions}
-                placeholder={"Descreva como fazer..."}
-                placeholderTextColor="#C7C7CC"
-              />
+            {/* Lista de Ingredientes */}
+            <View style={styles.listContainer}>
+              {Object.keys(groupedIngredients).length === 0 && (
+                <Text style={styles.emptyText}>Adicione ingredientes</Text>
+              )}
+              {Object.keys(groupedIngredients).map((cat) => (
+                <View key={cat} style={{ marginBottom: 10 }}>
+                  <Text style={styles.catHeader}>{cat}</Text>
+                  {groupedIngredients[cat].map((ing: any, i: number) => {
+                    const realIndex = ingredients.findIndex(
+                      (item) => item === ing,
+                    );
+                    return (
+                      <TouchableOpacity
+                        key={i}
+                        style={[
+                          styles.listItem,
+                          editingIndex === realIndex && styles.listItemActive,
+                        ]}
+                        onPress={() => handleEditIngredient(ing, realIndex)}
+                      >
+                        <Text style={styles.listText}>
+                          <Text style={{ fontWeight: "bold" }}>
+                            {ing.quantity} {ing.unit}
+                          </Text>{" "}
+                          - {ing.name}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => removeIngredient(realIndex)}
+                        >
+                          <Ionicons
+                            name="trash-outline"
+                            size={18}
+                            color="#FF3B30"
+                          />
+                        </TouchableOpacity>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
-            <View style={{height: 100}} /> 
+
+            {/* Modo de Preparo */}
+            <Text style={styles.sectionTitle}>Modo de Preparo</Text>
+            <View style={styles.listContainer}>
+              {steps.map((step, index) => (
+                <View key={index} style={styles.stepItem}>
+                  <View style={styles.stepNumber}>
+                    <Text style={styles.stepNumberText}>{index + 1}</Text>
+                  </View>
+                  <Text style={styles.stepText}>{step}</Text>
+                  <TouchableOpacity
+                    onPress={() => removeStep(index)}
+                    style={{ padding: 5 }}
+                  >
+                    <Ionicons name="close-circle" size={20} color="#CCC" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {steps.length === 0 && (
+                <Text style={styles.emptyText}>
+                  Adicione os passos da receita
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.stepInputContainer}>
+              <TextInput
+                style={styles.stepInput}
+                value={currentStep}
+                onChangeText={setCurrentStep}
+                placeholder="Adicionar passo..."
+                multiline
+              />
+              <TouchableOpacity style={styles.addStepBtn} onPress={addStep}>
+                <Text style={styles.addStepText}>+ Passo</Text>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
 
+          {/* Botão de Salvar fixo no final do Modal, mas acima do teclado graças ao padding do View */}
           <View style={styles.footer}>
             <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-              <Text style={styles.saveBtnText}>
-                {initialData ? "Salvar Alterações" : "Concluir Receita"}
+              <Text style={styles.saveText}>
+                {recipeToEdit ? "Salvar Alterações" : "Criar Receita"}
               </Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
-
-        {/* --- MODAL INTERNO PARA SELECIONAR UNIDADE --- */}
-        <Modal visible={unitPickerVisible} transparent animationType="fade" onRequestClose={() => setUnitPickerVisible(false)}>
-          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setUnitPickerVisible(false)}>
-            <View style={styles.pickerContainer}>
-              <Text style={styles.pickerTitle}>Selecione a Unidade</Text>
-              <FlatList
-                data={STANDARD_UNITS}
-                keyExtractor={(item) => item}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.pickerItem} onPress={() => selectUnit(item)}>
-                    <Text style={styles.pickerItemText}>{item}</Text>
-                    {targetIngIndex !== null && recipeIngredients[targetIngIndex]?.unit === item && (
-                      <Ionicons name="checkmark" size={20} color="#007AFF" />
-                    )}
-                  </TouchableOpacity>
-                )}
-              />
-            </View>
-          </TouchableOpacity>
-        </Modal>
-
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FB' },
-  scrollContent: { padding: 20 },
-  
-  header: { 
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', 
-    paddingHorizontal: 20, paddingVertical: 15, backgroundColor: '#FFF',
-    borderBottomWidth: 1, borderBottomColor: '#F2F2F7'
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
   },
-  title: { fontSize: 18, fontWeight: '700', color: '#1C1C1E' },
+  content: {
+    backgroundColor: "#F8F9FA",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: "90%",
+    padding: 20,
+    paddingBottom: 0,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 20,
+    alignItems: "center",
+  },
+  title: { fontSize: 20, fontWeight: "bold" },
   closeBtn: { padding: 5 },
-  closeText: { color: '#007AFF', fontSize: 16 },
-
-  inputGroup: { marginBottom: 20 },
-  label: { fontSize: 12, fontWeight: '700', color: '#8E8E93', marginBottom: 8, letterSpacing: 0.5 },
-  nameInput: { fontSize: 22, fontWeight: 'bold', color: '#1C1C1E', borderBottomWidth: 1, borderBottomColor: '#E5E5EA', paddingVertical: 10 },
-
-  row: { flexDirection: 'row', marginBottom: 25 },
-  counterContainer: { flex: 1, backgroundColor: '#FFF', borderRadius: 12, padding: 12, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 5 },
-  counterLabel: { fontSize: 11, fontWeight: '700', color: '#8E8E93', marginBottom: 8, textAlign: 'center' },
-  counterControls: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  counterBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F2F2F7', justifyContent: 'center', alignItems: 'center' },
-  counterValue: { fontSize: 18, fontWeight: 'bold', color: '#1C1C1E' },
-  counterUnit: { fontSize: 12, fontWeight: 'normal', color: '#8E8E93' },
-
-  section: { marginBottom: 25 },
-  ingredientsContainer: { marginTop: 12 },
-  emptyHint: { color: '#C7C7CC', fontStyle: 'italic', textAlign: 'center', marginTop: 10 },
-  
-  ingCard: { 
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', 
-    padding: 10, borderRadius: 12, marginBottom: 8,
-    shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 3, elevation: 1
+  input: {
+    backgroundColor: "#FFF",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+    color: "#333",
   },
-  ingName: { flex: 1, fontSize: 15, fontWeight: '600', color: '#1C1C1E', marginRight: 10 },
-  
-  ingInputsRow: { 
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F2F7', 
-    borderRadius: 8, padding: 2, marginRight: 10
+  label: { fontSize: 13, fontWeight: "600", color: "#666", marginBottom: 5 },
+  row: { flexDirection: "row", gap: 10 },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginTop: 15,
+    marginBottom: 10,
   },
-  qtyInput: { 
-    width: 50, textAlign: 'center', paddingVertical: 8, fontWeight: 'bold', 
-    color: '#007AFF', fontSize: 16, borderRightWidth: 1, borderRightColor: '#E5E5EA'
+
+  box: {
+    marginBottom: 15,
+    backgroundColor: "#fff",
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
   },
-  
-  // Estilos do Seletor
-  unitSelector: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, height: '100%'
+  boxEditing: { borderColor: "#FF9500", backgroundColor: "#FFF8E1" },
+  editingLabel: {
+    fontSize: 10,
+    color: "#FF9500",
+    fontWeight: "bold",
+    marginBottom: 5,
+    textTransform: "uppercase",
   },
-  unitText: { fontSize: 14, fontWeight: '600', color: '#1C1C1E', marginRight: 4 },
 
-  trashBtn: { padding: 8 },
-  labelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  textArea: { backgroundColor: '#FFF', borderRadius: 12, padding: 15, fontSize: 16, lineHeight: 24, minHeight: 150, color: '#1C1C1E', borderWidth: 1, borderColor: '#E5E5EA' },
+  rowCenter: { flexDirection: "row", alignItems: "center", gap: 10 },
+  qtyInput: {
+    backgroundColor: "#F2F2F7",
+    width: 70,
+    padding: 10,
+    borderRadius: 10,
+    textAlign: "center",
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+  },
+  unitScroll: { flex: 1 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#F2F2F7",
+    marginRight: 6,
+    minWidth: 40,
+    alignItems: "center",
+  },
+  chipActive: { backgroundColor: "#007AFF" },
+  chipText: { fontWeight: "600", color: "#666", fontSize: 13 },
+  chipTextActive: { color: "#FFF" },
 
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F2F2F7' },
-  saveBtn: { backgroundColor: '#007AFF', borderRadius: 14, paddingVertical: 16, alignItems: 'center', shadowColor: '#007AFF', shadowOpacity: 0.2, shadowRadius: 8 },
-  saveBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  iconBtn: {
+    backgroundColor: "#007AFF",
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  updateBtn: { backgroundColor: "#FF9500" },
+  cancelBtn: { width: 30, justifyContent: "center", alignItems: "center" },
 
-  // Estilos do Modal de Unidades
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
-  pickerContainer: { width: '80%', maxHeight: '60%', backgroundColor: '#FFF', borderRadius: 16, padding: 20 },
-  pickerTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
-  pickerItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F2F2F7' },
-  pickerItemText: { fontSize: 16, color: '#333' }
+  listContainer: {
+    backgroundColor: "#FFF",
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  catHeader: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#8E8E93",
+    textTransform: "uppercase",
+    marginBottom: 5,
+    marginTop: 5,
+  },
+  listItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F2F2F7",
+    alignItems: "center",
+  },
+  listItemActive: {
+    backgroundColor: "#F0F8FF",
+    marginHorizontal: -10,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  listText: { fontSize: 14, color: "#333" },
+  emptyText: { color: "#CCC", fontStyle: "italic", textAlign: "center" },
+
+  stepItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 12,
+    gap: 10,
+  },
+  stepNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#E5E5EA",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  stepNumberText: { fontSize: 12, fontWeight: "bold", color: "#666" },
+  stepText: { flex: 1, fontSize: 14, color: "#333", lineHeight: 20 },
+
+  stepInputContainer: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-end",
+    marginBottom: 20,
+  },
+  stepInput: {
+    flex: 1,
+    backgroundColor: "#FFF",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+    minHeight: 60,
+    textAlignVertical: "top",
+  },
+  addStepBtn: {
+    backgroundColor: "#E5E5EA",
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+    height: 60,
+    justifyContent: "center",
+  },
+  addStepText: { fontWeight: "bold", color: "#333" },
+
+  footer: { paddingVertical: 20, backgroundColor: "#F8F9FA" },
+  saveBtn: {
+    backgroundColor: "#007AFF",
+    padding: 16,
+    borderRadius: 16,
+    alignItems: "center",
+  },
+  saveText: { color: "#FFF", fontWeight: "bold", fontSize: 16 },
+  imagePicker: {
+    width: '100%',
+    height: 180,
+    borderRadius: 16,
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    borderStyle: 'dashed',
+    marginBottom: 20,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  imagePlaceholder: {
+    alignItems: 'center',
+  },
+  imagePlaceholderText: {
+    marginTop: 8,
+    color: '#007AFF',
+    fontWeight: '600',
+    fontSize: 14,
+  },
 });

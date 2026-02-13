@@ -1,38 +1,54 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Swipeable } from 'react-native-gesture-handler';
+import React from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Animated,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Swipeable } from "react-native-gesture-handler";
 
-type Props = {
+type RecipeCardProps = {
   data: any;
+  status: { status: string; label: string; color: string };
   onPress: () => void;
-  onEdit: () => void;   // Nova prop
-  onDelete: () => void; // Nova prop
-  variant?: 'local' | 'api';
+  onEdit: () => void;
+  onDelete: () => void;
 };
 
-export function RecipeCard({ data, onPress, onEdit, onDelete, variant = 'local' }: Props) {
-  
-  // O que aparece quando arrasta para a esquerda
+export function RecipeCard({
+  data,
+  status,
+  onPress,
+  onEdit,
+  onDelete,
+}: RecipeCardProps) {
   const renderRightActions = (_: any, dragX: any) => {
     const scale = dragX.interpolate({
       inputRange: [-100, 0],
       outputRange: [1, 0],
-      extrapolate: 'clamp',
+      extrapolate: "clamp",
     });
-
     return (
       <View style={styles.actionsContainer}>
-        {/* Botão Editar */}
-        <TouchableOpacity style={[styles.actionBtn, styles.editBtn]} onPress={onEdit}>
+        {/* BOTÃO EDITAR (Laranja) */}
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.editBtn]}
+          onPress={onEdit}
+        >
           <Animated.View style={{ transform: [{ scale }] }}>
             <Ionicons name="pencil" size={24} color="#FFF" />
             <Text style={styles.actionText}>Editar</Text>
           </Animated.View>
         </TouchableOpacity>
 
-        {/* Botão Excluir */}
-        <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={onDelete}>
+        {/* BOTÃO EXCLUIR (Vermelho) */}
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.deleteBtn]}
+          onPress={onDelete}
+        >
           <Animated.View style={{ transform: [{ scale }] }}>
             <Ionicons name="trash" size={24} color="#FFF" />
             <Text style={styles.actionText}>Excluir</Text>
@@ -42,86 +58,113 @@ export function RecipeCard({ data, onPress, onEdit, onDelete, variant = 'local' 
     );
   };
 
-  // Se for API, não tem swipe. Se for Local, tem.
-  if (variant === 'api') {
-    return <CardContent data={data} onPress={onPress} variant={variant} />;
-  }
-
   return (
-    <Swipeable renderRightActions={renderRightActions} containerStyle={styles.swipeContainer}>
-      <CardContent data={data} onPress={onPress} variant={variant} />
+    <Swipeable
+      renderRightActions={renderRightActions}
+      containerStyle={styles.swipeContainer}
+    >
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={onPress}
+        style={[styles.card, { borderLeftColor: status.color }]}
+      >
+        <View style={styles.imageContainer}>
+          {data.image ? (
+            <Image source={{ uri: data.image }} style={styles.image} />
+          ) : (
+            <Ionicons name="restaurant-outline" size={30} color="#007AFF" />
+          )}
+        </View>
+
+        <View style={styles.content}>
+          <Text style={styles.title} numberOfLines={1}>
+            {data.name}
+          </Text>
+          <View style={styles.metaRow}>
+            <Ionicons name="time-outline" size={14} color="#666" />
+            <Text style={styles.metaText}>{data.preparationTime} min</Text>
+            <Text style={styles.dot}>•</Text>
+            <Ionicons name="people-outline" size={14} color="#666" />
+            <Text style={styles.metaText}>{data.servings} porções</Text>
+          </View>
+
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: status.color + "20" },
+            ]}
+          >
+            <Ionicons
+              name={
+                status.status === "ready" ? "checkmark-circle" : "alert-circle"
+              }
+              size={12}
+              color={status.color}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[styles.statusText, { color: status.color }]}>
+              {status.label}
+            </Text>
+          </View>
+        </View>
+
+        <Ionicons name="chevron-forward" size={20} color="#E5E5EA" />
+      </TouchableOpacity>
     </Swipeable>
   );
 }
 
-// Extraí o conteúdo para não repetir código
-function CardContent({ data, onPress, variant }: any) {
-  return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.9}>
-      <View style={[styles.iconBox, variant === 'api' && styles.apiIconBox]}>
-        <Ionicons 
-          name={variant === 'api' ? 'sparkles' : 'restaurant'} 
-          size={24} 
-          color={variant === 'api' ? '#FFF' : '#007AFF'} 
-        />
-      </View>
-
-      <View style={styles.content}>
-        <Text style={styles.title} numberOfLines={1}>{data.name}</Text>
-        <View style={styles.metaRow}>
-          <View style={styles.badge}>
-            <Ionicons name="time-outline" size={12} color="#666" />
-            <Text style={styles.badgeText}>{data.preparationTime} min</Text>
-          </View>
-          <View style={styles.badge}>
-            <Ionicons name="people-outline" size={12} color="#666" />
-            <Text style={styles.badgeText}>{data.servings} porções</Text>
-          </View>
-        </View>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
-  swipeContainer: {
-    marginBottom: 12, // Movemos a margem para o container do Swipe
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
+  swipeContainer: { marginBottom: 12, borderRadius: 16, overflow: "hidden" },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 20,
-    // Sombra
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
-    borderWidth: 1, borderColor: '#F2F2F7',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF",
+    padding: 12,
+    borderRadius: 16,
+    borderLeftWidth: 5,
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#F2F2F7",
   },
-  // ... Estilos do CardContent iguais aos anteriores ...
-  iconBox: { width: 50, height: 50, borderRadius: 16, backgroundColor: '#E3F2FD', justifyContent: 'center', alignItems: 'center', marginRight: 16 },
-  apiIconBox: { backgroundColor: '#8E44AD' },
-  content: { flex: 1 },
-  title: { fontSize: 16, fontWeight: '700', color: '#1C1C1E', marginBottom: 6 },
-  metaRow: { flexDirection: 'row', gap: 8 },
-  badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F2F7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
-  badgeText: { fontSize: 11, fontWeight: '600', color: '#666' },
+  imageContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    backgroundColor: "#F2F2F7",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+    overflow: "hidden",
+  },
+  image: { width: "100%", height: "100%", resizeMode: "cover" },
+  content: { flex: 1, marginRight: 10 },
+  title: { fontSize: 16, fontWeight: "700", color: "#1C1C1E", marginBottom: 4 },
+  metaRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  metaText: { fontSize: 12, color: "#666", marginLeft: 4, marginRight: 8 },
+  dot: { color: "#CCC", marginRight: 8, fontSize: 10 },
+  statusBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusText: { fontSize: 11, fontWeight: "700" },
 
-  // ESTILOS DO SWIPE (Ações)
-  actionsContainer: {
-    flexDirection: 'row',
-    width: 160, // Largura total dos botões ocultos
-    height: '100%',
-  },
+  // AÇÕES SWIPE (Ajustado)
+  actionsContainer: { flexDirection: "row", width: 150, height: "100%" }, // Aumentado para caber 2 botões
   actionBtn: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '100%',
+    justifyContent: "center",
+    alignItems: "center",
+    height: "100%",
   },
-  editBtn: { backgroundColor: '#FF9500' }, // Laranja
-  deleteBtn: { backgroundColor: '#FF3B30' }, // Vermelho
-  actionText: { color: '#FFF', fontSize: 10, fontWeight: 'bold', marginTop: 4 },
+  editBtn: { backgroundColor: "#FF9500" }, // Laranja
+  deleteBtn: { backgroundColor: "#FF3B30" }, // Vermelho
+  actionText: { color: "#FFF", fontSize: 11, fontWeight: "700", marginTop: 4 },
 });

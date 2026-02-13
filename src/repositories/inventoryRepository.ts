@@ -1,150 +1,143 @@
-import { eq, sql } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
-import { db } from '../database/db';
-import { inventoryItems, products } from '../database/schema';
+import { eq, and } from "drizzle-orm";
+import { v4 as uuidv4 } from "uuid";
+import { db } from "../database/db";
+import { inventoryItems, products } from "../database/schema";
 
 export const InventoryRepository = {
-  
-  // --- CRIAR ITEM ---
-  async createItem(data: {
-    name: string;
-    quantity: number;
-    unit: string;
-    location: string;
-    expiryDate?: Date;
-    image?: string | null;
-    calories?: number;
-    allergens?: string;
-    brand?: string;
-  }) {
-    const productId = uuidv4();
-    const inventoryId = uuidv4();
-    const now = new Date();
-
+  // --- LISTAR ITENS ---
+  async findAll() {
     try {
-      // 1. Cria o Produto (Metadados)
-      await db.insert(products).values({
-        id: productId,
-        name: data.name,
-        defaultUnit: data.unit,
-        image: data.image,
-        calories: data.calories,
-        allergens: data.allergens,
-        brand: data.brand,
-        createdAt: now,
-        updatedAt: now,
-      });
+      const result = await db
+        .select({
+          id: inventoryItems.id,
+          productId: products.id,
+          name: products.name,
+          quantity: inventoryItems.quantity,
+          unit: inventoryItems.unit, // Pega a unidade do item do estoque
+          expiryDate: inventoryItems.expiryDate,
+          image: products.image,
+          category: products.category,
+          location: inventoryItems.location,
+          calories: products.calories,
+          brand: products.brand,
+          allergens: products.allergens,
+        })
+        .from(inventoryItems)
+        .leftJoin(products, eq(inventoryItems.productId, products.id))
+        .all();
 
-      // 2. Cria o Item de Estoque
-      await db.insert(inventoryItems).values({
-        id: inventoryId,
+      return result.map((item) => ({
+        ...item,
+        expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+      }));
+    } catch (error) {
+      console.error("Erro ao buscar itens:", error);
+      return [];
+    }
+  },
+
+  // --- CRIAR ITEM (AQUI ESTÁ A MÁGICA) ---
+  async createItem(data: any) {
+    return await db.transaction(async (tx) => {
+      const now = new Date();
+      let productId = null;
+
+      // 1. VERIFICA SE O PRODUTO JÁ EXISTE PELO NOME
+      // Isso impede que "Arroz" vire um novo ID toda vez que você compra.
+      const existingProduct = await tx
+        .select()
+        .from(products)
+        .where(eq(products.name, data.name)) // Procura pelo nome exato
+        .limit(1);
+
+      if (existingProduct.length > 0) {
+        // ENCONTROU! Vamos reutilizar o ID antigo.
+        // Assim, as receitas que usam esse produto vão reconhecer o novo estoque.
+        productId = existingProduct[0].id;
+
+        // Opcional: Atualizar dados do produto se o novo tiver mais informações (ex: imagem)
+        if (!existingProduct[0].image && data.image) {
+          await tx
+            .update(products)
+            .set({ image: data.image, updatedAt: now })
+            .where(eq(products.id, productId));
+        }
+      } else {
+        // NÃO ENCONTROU. Cria um produto novo do zero.
+        productId = uuidv4();
+        await tx.insert(products).values({
+          id: productId,
+          name: data.name,
+          brand: data.brand || null,
+          category: data.category || null,
+          defaultUnit: data.unit || "un",
+          image: data.image || null,
+          calories: data.calories || 0,
+          allergens: data.allergens || null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      // 2. CRIA O ITEM DE ESTOQUE VINCULADO AO ID (NOVO OU RECICLADO)
+      await tx.insert(inventoryItems).values({
+        id: uuidv4(),
         productId: productId,
         quantity: data.quantity,
-        expiryDate: data.expiryDate,
-        location: data.location,
-        minimumStock: 0,
-        isSynced: false,
+        unit: data.unit, // Salva a unidade específica deste lote
+        expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+        location: data.location || "pantry",
+        isSynced: 0,
         createdAt: now,
         updatedAt: now,
       });
-
-      return true;
-    } catch (error) {
-      console.error("Erro no Repositório (Create):", error);
-      throw error;
-    }
+    });
   },
 
-  // --- ATUALIZAR ITEM (CORRIGIDO) ---
-  async updateItem(id: string, data: {
-    name: string;
-    quantity: number;
-    unit: string;
-    location: string; // <--- ADICIONADO AQUI
-    expiryDate?: Date;
-    image?: string | null;
-    calories?: number;
-    allergens?: string;
-  }) {
-    try {
-        const now = new Date();
+  // --- ATUALIZAR ITEM ---
+  async updateItem(id: string, data: any) {
+    const now = new Date();
+    return await db.transaction(async (tx) => {
+      // Busca o item para saber qual o productId dele
+      const currentItem = await tx
+        .select()
+        .from(inventoryItems)
+        .where(eq(inventoryItems.id, id))
+        .get();
 
-        // 1. Atualiza a tabela de Estoque (Quantidade, Validade e LOCAL)
-        await db.update(inventoryItems)
-          .set({ 
-            quantity: data.quantity, 
-            expiryDate: data.expiryDate,
-            location: data.location, // <--- AGORA SALVA O LOCAL NA ATUALIZAÇÃO
-            updatedAt: now
-          })
-          .where(eq(inventoryItems.id, id));
+      if (!currentItem) return;
 
-        // 2. Busca o productId associado
-        const item = await db.select({ productId: inventoryItems.productId })
-          .from(inventoryItems)
-          .where(eq(inventoryItems.id, id))
-          .get();
+      // Atualiza tabela de Estoque
+      await tx
+        .update(inventoryItems)
+        .set({
+          quantity: data.quantity,
+          unit: data.unit,
+          expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+          location: data.location,
+          updatedAt: now,
+        })
+        .where(eq(inventoryItems.id, id));
 
-        if (item) {
-            // 3. Atualiza o Produto (Nome, Foto, etc)
-            await db.update(products)
-              .set({
-                name: data.name,
-                defaultUnit: data.unit,
-                image: data.image,
-                calories: data.calories,
-                allergens: data.allergens,
-                updatedAt: now
-              })
-              .where(eq(products.id, item.productId));
-        }
-        return true;
-    } catch (error) {
-        console.error("Erro no Repositório (Update):", error);
-        throw error;
-    }
+      // Atualiza tabela de Produto (Dados globais)
+      await tx
+        .update(products)
+        .set({
+          name: data.name,
+          image: data.image,
+          brand: data.brand,
+          calories: data.calories,
+          allergens: data.allergens,
+          updatedAt: now,
+        })
+        .where(eq(products.id, currentItem.productId));
+    });
   },
 
-  // --- BUSCAR TODOS ---
-  async findAll() {
-    return await db
-      .select({
-        id: inventoryItems.id,
-        productId: inventoryItems.productId,
-        quantity: inventoryItems.quantity,
-        expiryDate: inventoryItems.expiryDate,
-        location: inventoryItems.location,
-        minimumStock: inventoryItems.minimumStock,
-        name: products.name,
-        unit: products.defaultUnit,
-        image: products.image,
-        brand: products.brand,
-        calories: products.calories,
-        allergens: products.allergens
-        // REMOVIDO: location: inventoryItems.location (já estava ali em cima, sem vírgula antes causava erro)
-      })
-      .from(inventoryItems)
-      .leftJoin(products, eq(inventoryItems.productId, products.id));
+  // --- REMOVER ITEM ---
+  async deleteItem(id: string) {
+    // Apaga apenas o registro de estoque.
+    // O PRODUTO PERMANECE NO BANCO PARA AS RECEITAS NÃO QUEBRAREM!
+    return await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
   },
-
-  async updateQuantity(id: string, newQuantity: number) {
-    await db.update(inventoryItems)
-      .set({ quantity: newQuantity, updatedAt: new Date() })
-      .where(eq(inventoryItems.id, id));
-  },
-
-  async delete(id: string) {
-    await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
-  },
-
-  async searchProducts(query: string) {
-    return await db.select({
-        id: products.id,
-        name: products.name,
-        defaultUnit: products.defaultUnit
-      })
-      .from(products)
-      .where(sql`lower(${products.name}) LIKE ${`%${query.toLowerCase()}%`}`)
-      .limit(5);
-  }
 };

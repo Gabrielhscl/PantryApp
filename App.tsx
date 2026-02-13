@@ -5,11 +5,12 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar"; // <--- 1. IMPORT NECESSÁRIO
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import InventoryScreen from "./src/screens/InventoryScreen";
 import RecipesScreen from "./src/screens/RecipesScreen";
 import ShoppingListScreen from "./src/screens/ShoppingListScreen";
 import { initDatabase } from "./src/database/db";
+import ProductsScreen from "./src/screens/ProductsScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -70,6 +71,15 @@ export default function App() {
           <Tab.Screen name="Estoque" component={InventoryScreen} />
           <Tab.Screen name="Receitas" component={RecipesScreen} />
           <Tab.Screen name="Lista" component={ShoppingListScreen} />
+          <Tab.Screen
+            name="Catálogo"
+            component={ProductsScreen}
+            options={{
+              tabBarIcon: ({ color, size }) => (
+                <Ionicons name="grid-outline" color={color} size={size} />
+              ),
+            }}
+          />
         </Tab.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>

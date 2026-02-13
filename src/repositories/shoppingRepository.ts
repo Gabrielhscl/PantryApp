@@ -1,3 +1,4 @@
+//
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "../database/db";
@@ -21,6 +22,20 @@ export const ShoppingRepository = {
       createdAt: now,
       updatedAt: now,
     });
+  },
+
+  // --- NOVA FUNÇÃO DE ATUALIZAR ---
+  async updateItem(id: string, data: any) {
+    return await db
+      .update(shoppingListItems)
+      .set({
+        name: data.name,
+        quantity: data.quantity,
+        unit: data.unit,
+        category: data.category,
+        updatedAt: new Date(),
+      })
+      .where(eq(shoppingListItems.id, id));
   },
 
   async toggleCheck(id: string, isChecked: boolean) {

@@ -79,3 +79,22 @@ export const shoppingListItems = sqliteTable('shopping_list_items', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
+
+// Adicione ao final do src/database/schema.ts
+
+export const shoppingListTemplates = sqliteTable('shopping_list_templates', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(), // Ex: "Feira Mensal", "Churrasco"
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const templateItems = sqliteTable('template_items', {
+  id: text('id').primaryKey(),
+  templateId: text('template_id').references(() => shoppingListTemplates.id).notNull(),
+  productId: text('product_id').references(() => products.id),
+  name: text('name').notNull(),
+  quantity: real('quantity').notNull(),
+  unit: text('unit').notNull(),
+  category: text('category'),
+});

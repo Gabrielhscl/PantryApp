@@ -41,6 +41,9 @@ const CATEGORIES = [
   "Outros",
 ];
 
+// NOVAS UNIDADES PADRÃO
+const UNITS = ["un", "kg", "g", "L", "ml"];
+
 const LOCATIONS = [
   { id: "pantry", label: "Armário", icon: "cube-outline" },
   { id: "fridge", label: "Geladeira", icon: "thermometer-outline" },
@@ -80,7 +83,7 @@ export default function ProductsScreen() {
 
   // Tamanho e Imagem
   const [packSize, setPackSize] = useState("");
-  const [packUnit, setPackUnit] = useState("un");
+  const [packUnit, setPackUnit] = useState("un"); // Agora controlado pelos botões
   const [image, setImage] = useState<string | null>(null);
 
   // Nutrição
@@ -91,7 +94,7 @@ export default function ProductsScreen() {
   const [fiber, setFiber] = useState("");
   const [sodium, setSodium] = useState("");
 
-  // --- NOVO: TAGS DE ALERTA ---
+  // Tags
   const [alertTags, setAlertTags] = useState<string[]>([]);
   const [currentTagInput, setCurrentTagInput] = useState("");
 
@@ -149,9 +152,17 @@ export default function ProductsScreen() {
 
         if (info.location) setDefaultLocation(info.location);
         if (info.packSize) setPackSize(String(info.packSize));
-        if (info.packUnit) setPackUnit(info.packUnit);
 
-        // Preenche Tags Automaticamente
+        // Normaliza a unidade da API para as nossas
+        if (info.packUnit) {
+          const apiUnit = info.packUnit.toLowerCase();
+          if (UNITS.includes(apiUnit)) {
+            setPackUnit(apiUnit);
+          } else {
+            setPackUnit("un"); // Fallback
+          }
+        }
+
         if (info.allergens) {
           const tagsFromApi = info.allergens
             .split(",")
@@ -192,8 +203,8 @@ export default function ProductsScreen() {
         category,
         defaultLocation,
         packSize: parseFloat(packSize) || 0,
-        packUnit: packUnit || "un",
-        unit: packUnit || "un",
+        packUnit: packUnit,
+        unit: packUnit, // Garante consistência
         image,
         calories: parseFloat(calories) || 0,
         carbs: parseFloat(carbs) || 0,
@@ -201,7 +212,7 @@ export default function ProductsScreen() {
         fat: parseFloat(fat) || 0,
         fiber: parseFloat(fiber) || 0,
         sodium: parseFloat(sodium) || 0,
-        allergens: alertTags.join(","), // Salva como texto separado por vírgula
+        allergens: alertTags.join(","),
       };
 
       if (editingId) {
@@ -267,9 +278,11 @@ export default function ProductsScreen() {
     setDefaultLocation(item.defaultLocation || "pantry");
 
     setPackSize(item.packSize ? String(item.packSize) : "");
-    setPackUnit(item.packUnit || "un");
-    setImage(item.image);
+    // Verifica se a unidade salva é válida, senão usa 'un'
+    const loadedUnit = item.packUnit || item.defaultUnit || "un";
+    setPackUnit(UNITS.includes(loadedUnit) ? loadedUnit : "un");
 
+    setImage(item.image);
     setCalories(item.calories ? String(item.calories) : "");
     setCarbs(item.carbs ? String(item.carbs) : "");
     setProtein(item.protein ? String(item.protein) : "");
@@ -277,7 +290,6 @@ export default function ProductsScreen() {
     setFiber(item.fiber ? String(item.fiber) : "");
     setSodium(item.sodium ? String(item.sodium) : "");
 
-    // Carrega Tags
     if (item.allergens) {
       setAlertTags(item.allergens.split(",").filter((t: string) => t.trim()));
     } else {
@@ -461,7 +473,7 @@ export default function ProductsScreen() {
                     </ScrollView>
                   </View>
 
-                  {/* LOCAL & TAMANHO */}
+                  {/* LOCAL & TAMANHO & UNIDADE */}
                   <View
                     style={{ flexDirection: "row", gap: 15, marginBottom: 16 }}
                   >
@@ -489,43 +501,53 @@ export default function ProductsScreen() {
                         ))}
                       </View>
                     </View>
+
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Emb. Padrão</Text>
-                      <View style={{ flexDirection: "row", gap: 5 }}>
-                        <TextInput
-                          style={[
-                            styles.input,
-                            { flex: 1, padding: 8, height: 40 },
-                          ]}
-                          value={packSize}
-                          onChangeText={setPackSize}
-                          placeholder="395"
-                          keyboardType="numeric"
-                        />
-                        <TextInput
-                          style={[
-                            styles.input,
-                            {
-                              width: 40,
-                              padding: 8,
-                              height: 40,
-                              textAlign: "center",
-                            },
-                          ]}
-                          value={packUnit}
-                          onChangeText={setPackUnit}
-                          placeholder="g"
-                          autoCapitalize="none"
-                        />
-                      </View>
+                      <Text style={styles.label}>Peso/Volume</Text>
+                      <TextInput
+                        style={[
+                          styles.input,
+                          { padding: 8, height: 40, textAlign: "center" },
+                        ]}
+                        value={packSize}
+                        onChangeText={setPackSize}
+                        placeholder="395"
+                        keyboardType="numeric"
+                      />
                     </View>
                   </View>
 
-                  {/* --- SEÇÃO DE ALERTAS E ETIQUETAS (IGUAL AO ESTOQUE) --- */}
+                  {/* --- SELETOR DE UNIDADES PADRONIZADO --- */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Unidade</Text>
+                    <View
+                      style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}
+                    >
+                      {UNITS.map((u) => (
+                        <TouchableOpacity
+                          key={u}
+                          style={[
+                            styles.unitChip,
+                            packUnit === u && styles.unitChipActive,
+                          ]}
+                          onPress={() => setPackUnit(u)}
+                        >
+                          <Text
+                            style={[
+                              styles.unitText,
+                              packUnit === u && styles.unitTextActive,
+                            ]}
+                          >
+                            {u}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* ALERTAS */}
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Alertas & Etiquetas</Text>
-
-                    {/* Input com botão adicionar */}
                     <View style={styles.tagInputRow}>
                       <TextInput
                         style={[styles.input, { flex: 1 }]}
@@ -542,7 +564,6 @@ export default function ProductsScreen() {
                       </TouchableOpacity>
                     </View>
 
-                    {/* Sugestões Rápidas */}
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
@@ -559,7 +580,6 @@ export default function ProductsScreen() {
                       ))}
                     </ScrollView>
 
-                    {/* Tags Ativas */}
                     <View style={styles.tagsContainer}>
                       {alertTags.length === 0 && (
                         <Text style={styles.emptyTagsText}>
@@ -680,7 +700,6 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, marginLeft: 10, fontSize: 16, color: "#333" },
 
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -706,7 +725,6 @@ const styles = StyleSheet.create({
   closeBtn: { padding: 5, backgroundColor: "#f2f2f7", borderRadius: 20 },
   modalBody: { flex: 1, padding: 20 },
 
-  // Imagem
   imageSection: { alignItems: "center", marginBottom: 20 },
   proImage: {
     width: 100,
@@ -741,7 +759,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Inputs
   inputGroup: { marginBottom: 16 },
   label: { fontSize: 13, fontWeight: "600", color: "#666", marginBottom: 6 },
   input: {
@@ -767,7 +784,21 @@ const styles = StyleSheet.create({
   catText: { fontSize: 13, color: "#666", fontWeight: "600" },
   catTextActive: { color: "#FFF" },
 
-  // Mini botões de Local
+  // Chips de Unidade (NOVO)
+  unitChip: {
+    width: 50,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: "#F2F2F7",
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+  },
+  unitChipActive: { backgroundColor: "#007AFF", borderColor: "#007AFF" },
+  unitText: { fontSize: 14, fontWeight: "bold", color: "#666" },
+  unitTextActive: { color: "#FFF" },
+
   miniLocBtn: {
     flex: 1,
     alignItems: "center",
@@ -780,7 +811,6 @@ const styles = StyleSheet.create({
   },
   miniLocBtnActive: { backgroundColor: "#007AFF", borderColor: "#007AFF" },
 
-  // TAGS (ESTILO IGUAL AO ESTOQUE)
   tagInputRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
   addTagBtn: {
     backgroundColor: "#007AFF",
@@ -830,7 +860,6 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
 
-  // Nutrição
   divider: { height: 1, backgroundColor: "#E5E5EA", marginVertical: 15 },
   sectionTitle: {
     fontSize: 14,
@@ -856,7 +885,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Footer
   modalFooter: { padding: 20, borderTopWidth: 1, borderTopColor: "#f0f0f0" },
   saveBtn: {
     backgroundColor: "#007AFF",
@@ -866,7 +894,6 @@ const styles = StyleSheet.create({
   },
   saveText: { color: "white", fontSize: 18, fontWeight: "bold" },
 
-  // Camera
   cameraContainer: { flex: 1, backgroundColor: "black" },
   cameraOverlay: {
     ...StyleSheet.absoluteFillObject,

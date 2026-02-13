@@ -20,8 +20,6 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFocusEffect } from "@react-navigation/native";
 
-import { AlertModal } from "../components/modals/AlertModal";
-
 import { useInventory } from "../hooks/useInventory";
 import { InventoryItemCard } from "../components/InventoryItemCard";
 import { Autocomplete } from "../components/Autocomplete";
@@ -31,6 +29,8 @@ import { InventoryRepository } from "../repositories/inventoryRepository";
 import { ProductRepository } from "../repositories/productRepository";
 import { ScreenHeader } from "../components/ui/ScreenHeader";
 import { FloatingButton } from "../components/ui/FloatingButton";
+import { AlertModal } from "../components/modals/AlertModal";
+import { InventoryDetailsModal } from "../components/modals/InventoryDetailsModal";
 
 const LOCATIONS = [
   { id: "pantry", label: "Armário", icon: "cube-outline" },
@@ -44,9 +44,14 @@ export default function InventoryScreen() {
   // UI States
   const [searchText, setSearchText] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // Scanner
+  // --- CONTROLE DE DATAS ---
+  // Precisamos saber QUAL data estamos editando (vencimento ou compra)
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [activeDateField, setActiveDateField] = useState<
+    "expiry" | "purchase" | null
+  >(null);
+
   const [isScanning, setIsScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -55,14 +60,14 @@ export default function InventoryScreen() {
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
   const [quantity, setQuantity] = useState("1");
   const [expiry, setExpiry] = useState(new Date());
+  const [purchaseDate, setPurchaseDate] = useState(new Date()); // NOVO
   const [location, setLocation] = useState("pantry");
-
-  // Autocomplete State
   const [query, setQuery] = useState("");
 
   const [totalDisplay, setTotalDisplay] = useState("");
+  const [detailItem, setDetailItem] = useState<any | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
-  // --- ESTADO DO NOVO POPUP ---
   const [alertConfig, setAlertConfig] = useState({
     visible: false,
     title: "",
@@ -70,20 +75,6 @@ export default function InventoryScreen() {
     type: "info" as "info" | "danger" | "success",
     onConfirm: () => {},
   });
-
-  // Função auxiliar para mostrar o alerta
-  const showAlert = (
-    title: string,
-    message: string,
-    onConfirm: () => void,
-    type: "info" | "danger" = "info",
-  ) => {
-    setAlertConfig({ visible: true, title, message, onConfirm, type });
-  };
-
-  const closeAlert = () => {
-    setAlertConfig((prev) => ({ ...prev, visible: false }));
-  };
 
   useFocusEffect(
     useCallback(() => {
@@ -100,13 +91,11 @@ export default function InventoryScreen() {
 
       if (size > 0) {
         const total = qty * size;
-        if (unit === "g" && total >= 1000) {
+        if (unit === "g" && total >= 1000)
           setTotalDisplay(`Total: ${(total / 1000).toFixed(2)} kg`);
-        } else if (unit === "ml" && total >= 1000) {
+        else if (unit === "ml" && total >= 1000)
           setTotalDisplay(`Total: ${(total / 1000).toFixed(2)} L`);
-        } else {
-          setTotalDisplay(`Total: ${total} ${unit}`);
-        }
+        else setTotalDisplay(`Total: ${total} ${unit}`);
       } else {
         setTotalDisplay(`Total: ${qty} ${unit}`);
       }
@@ -115,10 +104,35 @@ export default function InventoryScreen() {
     }
   }, [quantity, selectedProduct]);
 
+  // --- HANDLERS ---
+  const openDatePicker = (field: "expiry" | "purchase") => {
+    setActiveDateField(field);
+    setShowDatePicker(true);
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === "android") setShowDatePicker(false);
+
+    if (selectedDate) {
+      if (activeDateField === "expiry") setExpiry(selectedDate);
+      if (activeDateField === "purchase") setPurchaseDate(selectedDate);
+    }
+  };
+
+  const showAlert = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    type: "info" | "danger" = "info",
+  ) => {
+    setAlertConfig({ visible: true, title, message, onConfirm, type });
+  };
+  const closeAlert = () =>
+    setAlertConfig((prev) => ({ ...prev, visible: false }));
+
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     setIsScanning(false);
     let product = await ProductRepository.findByBarcode(data);
-
     if (!product) {
       try {
         const info = await ProductService.fetchProductByBarcode(data);
@@ -156,16 +170,13 @@ export default function InventoryScreen() {
         return;
       }
     }
-
-    if (product) {
-      selectProduct(product);
-    }
+    if (product) selectProduct(product);
   };
 
   const selectProduct = (product: any) => {
     setSelectedProduct(product);
     setLocation(product.defaultLocation || "pantry");
-    setQuery(""); // Limpa a busca ao selecionar
+    setQuery("");
     setModalVisible(true);
   };
 
@@ -182,20 +193,26 @@ export default function InventoryScreen() {
     setQuantity(String(item.quantity));
     setLocation(item.location);
     if (item.expiryDate) setExpiry(new Date(item.expiryDate));
+    // Carrega a data de compra se existir, senão usa hoje
+    if (item.createdAt) setPurchaseDate(new Date(item.createdAt));
     setModalVisible(true);
   };
 
-  // --- NOVA FUNÇÃO DE VALIDAÇÃO ---
   const handleDelete = (id: string) => {
     showAlert(
       "Remover Item",
-      "Tem certeza que deseja remover este item do estoque? A quantidade voltará a zero.",
+      "Tem certeza que deseja remover este item do estoque?",
       () => {
         actions.removeItem(id);
         closeAlert();
       },
-      "danger", // Deixa o botão vermelho!
+      "danger",
     );
+  };
+
+  const handleItemPress = (item: any) => {
+    setDetailItem(item);
+    setShowDetailModal(true);
   };
 
   const handleSave = async () => {
@@ -205,10 +222,8 @@ export default function InventoryScreen() {
     try {
       const qtdInput = parseFloat(quantity);
       let finalQuantity = qtdInput;
-
-      if (!editingItemId && selectedProduct.packSize > 0) {
+      if (!editingItemId && selectedProduct.packSize > 0)
         finalQuantity = qtdInput * selectedProduct.packSize;
-      }
 
       const data = {
         productId: selectedProduct.id,
@@ -217,6 +232,7 @@ export default function InventoryScreen() {
         unit: selectedProduct.packUnit || selectedProduct.defaultUnit || "un",
         location,
         expiryDate: expiry,
+        createdAt: purchaseDate, // Salva a data de compra escolhida
       };
 
       if (editingItemId) {
@@ -230,12 +246,10 @@ export default function InventoryScreen() {
         );
         Alert.alert("Adicionado", "Item salvo! 📦");
       }
-
       setModalVisible(false);
       resetForm();
       refresh();
     } catch (error) {
-      console.error(error);
       Alert.alert("Erro", "Falha ao salvar.");
     }
   };
@@ -245,22 +259,22 @@ export default function InventoryScreen() {
     setSelectedProduct(null);
     setQuantity("1");
     setExpiry(new Date());
+    setPurchaseDate(new Date()); // Reset data compra
     setLocation("pantry");
-    setQuery(""); // Reseta a busca
+    setQuery("");
     setTotalDisplay("");
   };
 
   if (isScanning) {
-    if (!permission?.granted) {
+    if (!permission?.granted)
       return (
         <View style={styles.center}>
-          <Text>Precisamos da câmera</Text>
+          <Text>Permitir câmera?</Text>
           <TouchableOpacity onPress={requestPermission}>
-            <Text style={{ color: "blue" }}>Permitir</Text>
+            <Text style={{ color: "blue" }}>Sim</Text>
           </TouchableOpacity>
         </View>
       );
-    }
     return (
       <View style={styles.cameraContainer}>
         <CameraView
@@ -292,7 +306,7 @@ export default function InventoryScreen() {
           <Ionicons name="search" size={20} color="#666" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar no estoque..."
+            placeholder="Buscar..."
             value={searchText}
             onChangeText={setSearchText}
           />
@@ -332,10 +346,9 @@ export default function InventoryScreen() {
           renderItem={({ item }) => (
             <InventoryItemCard
               item={item}
-              onIncrement={actions.increment}
-              onDecrement={actions.decrement}
+              onPress={handleItemPress}
               onEdit={handleEdit}
-              onDelete={handleDelete} // <-- AQUI USAMOS A NOVA FUNÇÃO
+              onDelete={handleDelete}
             />
           )}
           contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
@@ -356,7 +369,7 @@ export default function InventoryScreen() {
           }}
         />
 
-        {/* MODAL */}
+        {/* MODAL DE ADIÇÃO/EDIÇÃO */}
         <Modal
           visible={modalVisible}
           animationType="slide"
@@ -368,7 +381,6 @@ export default function InventoryScreen() {
               style={styles.modalBackdrop}
               onPress={() => setModalVisible(false)}
             />
-
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>
@@ -432,7 +444,7 @@ export default function InventoryScreen() {
                             {selectedProduct.name}
                           </Text>
                           <Text style={styles.selectedSubtitle}>
-                            {selectedProduct.brand}
+                            {selectedProduct.brand}{" "}
                             {selectedProduct.packSize > 0
                               ? ` • ${selectedProduct.packSize}${selectedProduct.packUnit}`
                               : ""}
@@ -456,57 +468,52 @@ export default function InventoryScreen() {
 
                   {selectedProduct && (
                     <>
-                      <View style={styles.row}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.label}>
-                            {editingItemId
-                              ? "Quantidade Total"
-                              : "Quantas embalagens?"}
-                          </Text>
-                          <View style={styles.qtyContainer}>
-                            <TouchableOpacity
-                              onPress={() =>
-                                setQuantity(
-                                  Math.max(
-                                    1,
-                                    parseFloat(quantity) - 1,
-                                  ).toString(),
-                                )
-                              }
-                              style={styles.qtyBtn}
-                            >
-                              <Ionicons
-                                name="remove"
-                                size={20}
-                                color="#007AFF"
-                              />
-                            </TouchableOpacity>
-                            <TextInput
-                              style={styles.qtyInput}
-                              value={quantity}
-                              onChangeText={setQuantity}
-                              keyboardType="numeric"
-                            />
-                            <TouchableOpacity
-                              onPress={() =>
-                                setQuantity(
-                                  (parseFloat(quantity) + 1).toString(),
-                                )
-                              }
-                              style={styles.qtyBtn}
-                            >
-                              <Ionicons name="add" size={20} color="#007AFF" />
-                            </TouchableOpacity>
-                          </View>
-                          {totalDisplay ? (
-                            <Text style={styles.totalHint}>{totalDisplay}</Text>
-                          ) : null}
+                      <View style={styles.section}>
+                        <Text style={styles.label}>
+                          {editingItemId
+                            ? "Quantidade Total"
+                            : "Quantas embalagens?"}
+                        </Text>
+                        <View style={styles.qtyContainer}>
+                          <TouchableOpacity
+                            onPress={() =>
+                              setQuantity(
+                                Math.max(
+                                  1,
+                                  parseFloat(quantity) - 1,
+                                ).toString(),
+                              )
+                            }
+                            style={styles.qtyBtn}
+                          >
+                            <Ionicons name="remove" size={20} color="#007AFF" />
+                          </TouchableOpacity>
+                          <TextInput
+                            style={styles.qtyInput}
+                            value={quantity}
+                            onChangeText={setQuantity}
+                            keyboardType="numeric"
+                          />
+                          <TouchableOpacity
+                            onPress={() =>
+                              setQuantity((parseFloat(quantity) + 1).toString())
+                            }
+                            style={styles.qtyBtn}
+                          >
+                            <Ionicons name="add" size={20} color="#007AFF" />
+                          </TouchableOpacity>
                         </View>
+                        {totalDisplay ? (
+                          <Text style={styles.totalHint}>{totalDisplay}</Text>
+                        ) : null}
+                      </View>
 
+                      {/* LINHA DE DATAS DUPLA */}
+                      <View style={styles.row}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.label}>Vence em</Text>
                           <TouchableOpacity
-                            onPress={() => setShowDatePicker(true)}
+                            onPress={() => openDatePicker("expiry")}
                             style={styles.dateBtn}
                           >
                             <Ionicons
@@ -515,7 +522,23 @@ export default function InventoryScreen() {
                               color="#666"
                             />
                             <Text style={styles.dateText}>
-                              {expiry.toLocaleDateString()}
+                              {expiry.toLocaleDateString("pt-BR")}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.label}>Comprou em</Text>
+                          <TouchableOpacity
+                            onPress={() => openDatePicker("purchase")}
+                            style={styles.dateBtn}
+                          >
+                            <Ionicons
+                              name="cart-outline"
+                              size={20}
+                              color="#666"
+                            />
+                            <Text style={styles.dateText}>
+                              {purchaseDate.toLocaleDateString("pt-BR")}
                             </Text>
                           </TouchableOpacity>
                         </View>
@@ -552,11 +575,9 @@ export default function InventoryScreen() {
                       </View>
                     </>
                   )}
-
                   <View style={{ height: 50 }} />
                 </ScrollView>
               </KeyboardAvoidingView>
-
               <View style={styles.modalFooter}>
                 <TouchableOpacity
                   style={[
@@ -577,26 +598,34 @@ export default function InventoryScreen() {
           </View>
         </Modal>
 
+        {/* DATE PICKER GENÉRICO */}
         {showDatePicker && (
           <DateTimePicker
-            value={expiry}
+            value={activeDateField === "expiry" ? expiry : purchaseDate}
             mode="date"
             display={Platform.OS === "ios" ? "spinner" : "default"}
-            onChange={(e, d) => {
-              if (Platform.OS === "android") setShowDatePicker(false);
-              if (d) setExpiry(d);
-            }}
+            onChange={handleDateChange}
           />
         )}
         {showDatePicker && Platform.OS === "ios" && (
           <Modal transparent animationType="fade">
             <View style={styles.iosDateOverlay}>
               <View style={styles.iosDateContent}>
+                <Text style={styles.iosDateTitle}>
+                  {activeDateField === "expiry"
+                    ? "Data de Vencimento"
+                    : "Data da Compra"}
+                </Text>
                 <DateTimePicker
-                  value={expiry}
+                  value={activeDateField === "expiry" ? expiry : purchaseDate}
                   mode="date"
                   display="inline"
-                  onChange={(e, d) => d && setExpiry(d)}
+                  onChange={(_, d) =>
+                    d &&
+                    (activeDateField === "expiry"
+                      ? setExpiry(d)
+                      : setPurchaseDate(d))
+                  }
                 />
                 <TouchableOpacity
                   onPress={() => setShowDatePicker(false)}
@@ -618,6 +647,11 @@ export default function InventoryScreen() {
           onConfirm={alertConfig.onConfirm}
           confirmText={alertConfig.type === "danger" ? "Excluir" : "Confirmar"}
         />
+        <InventoryDetailsModal
+          visible={showDetailModal}
+          item={detailItem}
+          onClose={() => setShowDetailModal(false)}
+        />
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -626,7 +660,6 @@ export default function InventoryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f2f2f7" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-
   searchBox: {
     flexDirection: "row",
     backgroundColor: "#fff",
@@ -655,7 +688,6 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: "#007AFF", borderColor: "#007AFF" },
   filterText: { fontWeight: "600", color: "#666" },
   filterTextActive: { color: "white" },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -688,7 +720,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   saveText: { color: "white", fontSize: 18, fontWeight: "bold" },
-
   scanBtnMini: {
     backgroundColor: "#333",
     borderRadius: 12,
@@ -696,7 +727,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   selectedProductCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -723,11 +753,9 @@ const styles = StyleSheet.create({
   },
   selectedTitle: { fontSize: 16, fontWeight: "bold", color: "#333" },
   selectedSubtitle: { fontSize: 12, color: "#666" },
-
   label: { fontSize: 13, fontWeight: "600", color: "#666", marginBottom: 6 },
   section: { marginBottom: 20 },
   row: { flexDirection: "row", gap: 15, marginBottom: 20 },
-
   qtyContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -753,7 +781,6 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontWeight: "600",
   },
-
   dateBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -763,7 +790,6 @@ const styles = StyleSheet.create({
     height: 48,
   },
   dateText: { marginLeft: 8, fontSize: 14, color: "#333", fontWeight: "500" },
-
   locCard: {
     flex: 1,
     alignItems: "center",
@@ -775,7 +801,6 @@ const styles = StyleSheet.create({
   locCardActive: { backgroundColor: "#007AFF" },
   locText: { fontSize: 12, fontWeight: "600", color: "#666" },
   locTextActive: { color: "#FFF" },
-
   iosDateOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.3)",
@@ -789,9 +814,14 @@ const styles = StyleSheet.create({
     width: "80%",
     alignItems: "center",
   },
+  iosDateTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 10,
+    color: "#333",
+  },
   iosDateBtn: { marginTop: 10, padding: 10 },
   iosDateText: { color: "#007AFF", fontSize: 18, fontWeight: "bold" },
-
   cameraContainer: { flex: 1, backgroundColor: "black" },
   cameraOverlay: {
     ...StyleSheet.absoluteFillObject,

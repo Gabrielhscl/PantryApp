@@ -1,7 +1,7 @@
-import { eq } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
-import { db } from '../database/db';
-import { inventoryItems, products } from '../database/schema';
+import { eq } from "drizzle-orm";
+import { v4 as uuidv4 } from "uuid";
+import { db } from "../database/db";
+import { inventoryItems, products } from "../database/schema";
 
 export const InventoryRepository = {
   // --- LISTAR ITENS ---
@@ -13,27 +13,31 @@ export const InventoryRepository = {
           productId: products.id,
           name: products.name,
           quantity: inventoryItems.quantity,
-          unit: inventoryItems.unit, 
+          unit: inventoryItems.unit,
           expiryDate: inventoryItems.expiryDate,
+          createdAt: inventoryItems.createdAt, // Trazemos a data de criação/compra
           image: products.image,
           category: products.category,
           location: inventoryItems.location,
           calories: products.calories,
+          carbs: products.carbs,
+          protein: products.protein,
+          fat: products.fat,
+          fiber: products.fiber,
+          sodium: products.sodium,
           brand: products.brand,
           allergens: products.allergens,
-          
-          // --- NOVO: Trazemos os dados da embalagem ---
           packSize: products.packSize,
           packUnit: products.packUnit,
-          // -------------------------------------------
         })
         .from(inventoryItems)
         .leftJoin(products, eq(inventoryItems.productId, products.id))
         .all();
 
-      return result.map(item => ({
+      return result.map((item) => ({
         ...item,
         expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+        createdAt: item.createdAt ? new Date(item.createdAt) : null,
       }));
     } catch (error) {
       console.error("Erro ao buscar itens:", error);
@@ -41,13 +45,11 @@ export const InventoryRepository = {
     }
   },
 
-  // --- CRIAR ITEM ---
   async createItem(data: any) {
     return await db.transaction(async (tx) => {
       const now = new Date();
       let productId = null;
 
-      // Verifica se produto existe
       const existingProduct = await tx
         .select()
         .from(products)
@@ -56,74 +58,84 @@ export const InventoryRepository = {
 
       if (existingProduct.length > 0) {
         productId = existingProduct[0].id;
-        // Atualiza imagem se necessário
+        // Atualiza imagem se vier nova
         if (!existingProduct[0].image && data.image) {
-             await tx.update(products)
-               .set({ image: data.image, updatedAt: now })
-               .where(eq(products.id, productId));
+          await tx
+            .update(products)
+            .set({ image: data.image, updatedAt: now })
+            .where(eq(products.id, productId));
         }
       } else {
-        // Cria novo produto
         productId = uuidv4();
         await tx.insert(products).values({
           id: productId,
           name: data.name,
           brand: data.brand || null,
           category: data.category || null,
-          defaultUnit: data.unit || 'un',
+          defaultUnit: data.unit || "un",
           image: data.image || null,
           calories: data.calories || 0,
-          allergens: data.allergens || null,
-          // Salva os dados de embalagem se vierem na criação
-          packSize: data.packSize, 
+          packSize: data.packSize,
           packUnit: data.packUnit,
           createdAt: now,
           updatedAt: now,
         });
       }
 
-      // Cria item de estoque
       await tx.insert(inventoryItems).values({
         id: uuidv4(),
         productId: productId,
         quantity: data.quantity,
         unit: data.unit,
         expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-        location: data.location || 'pantry',
-        isSynced: 0,
-        createdAt: now,
+        location: data.location || "pantry",
+        // AQUI ESTÁ O TRUQUE: Usamos a data que veio do form ou 'now'
+        createdAt: data.createdAt ? new Date(data.createdAt) : now,
         updatedAt: now,
+        isSynced: 0,
       });
     });
   },
 
-  // --- ATUALIZAR ITEM ---
   async updateItem(id: string, data: any) {
     const now = new Date();
     return await db.transaction(async (tx) => {
-      const currentItem = await tx.select().from(inventoryItems).where(eq(inventoryItems.id, id)).get();
+      const currentItem = await tx
+        .select()
+        .from(inventoryItems)
+        .where(eq(inventoryItems.id, id))
+        .get();
       if (!currentItem) return;
 
-      await tx.update(inventoryItems).set({
-        quantity: data.quantity,
-        unit: data.unit,
-        expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-        location: data.location,
-        updatedAt: now
-      }).where(eq(inventoryItems.id, id));
+      await tx
+        .update(inventoryItems)
+        .set({
+          quantity: data.quantity,
+          unit: data.unit,
+          expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+          // Permitimos editar a data de compra
+          createdAt: data.createdAt
+            ? new Date(data.createdAt)
+            : currentItem.createdAt,
+          location: data.location,
+          updatedAt: now,
+        })
+        .where(eq(inventoryItems.id, id));
 
-      await tx.update(products).set({
-        name: data.name,
-        image: data.image,
-        brand: data.brand,
-        calories: data.calories,
-        allergens: data.allergens,
-        updatedAt: now
-      }).where(eq(products.id, currentItem.productId));
+      // Atualiza info básica do produto
+      await tx
+        .update(products)
+        .set({
+          name: data.name,
+          image: data.image,
+          brand: data.brand,
+          updatedAt: now,
+        })
+        .where(eq(products.id, currentItem.productId));
     });
   },
 
   async deleteItem(id: string) {
     return await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
-  }
+  },
 };

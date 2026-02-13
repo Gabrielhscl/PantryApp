@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { RecipeService } from "../../services/recipeService";
 
 type Props = {
   visible: boolean;
@@ -17,127 +18,166 @@ type Props = {
   inventory: any[];
 };
 
-export function RecipeDetailsModal({
-  visible,
-  onClose,
-  recipe,
-  inventory,
-}: Props) {
+const TABS = [
+  { id: 'all', label: 'Todos', icon: 'apps-outline' },
+  { id: 'fridge', label: 'Geladeira', icon: 'thermometer-outline' },
+  { id: 'pantry', label: 'Armário', icon: 'cube-outline' },
+  { id: 'freezer', label: 'Freezer', icon: 'snow-outline' },
+];
+
+export function RecipeDetailsModal({ visible, onClose, recipe, inventory }: Props) {
+  const [activeTab, setActiveTab] = useState('all');
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+
   if (!recipe) return null;
 
-  const checkItem = (ing: any) => {
-    const inStock = inventory.find((i) => i.productId === ing.productId);
-    const toBase = (qty: number, unit: string) => {
-      if (unit === "kg" || unit === "L") return qty * 1000;
-      return qty;
-    };
-    if (!inStock) return { has: false, current: 0 };
-    const stockQty = toBase(inStock.quantity, inStock.unit);
-    const neededQty = toBase(ing.quantity, ing.unit);
-    return {
-      has: stockQty >= neededQty,
-      current: inStock.quantity,
-      stockUnit: inStock.unit,
-    };
+  const toggleStep = (index: number) => {
+    setCompletedSteps(prev => 
+      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+    );
   };
 
-  // Separa a string de instruções em passos
-  const steps = recipe.instructions
-    ? recipe.instructions.split("\n").filter((s: string) => s.trim())
-    : [];
+  const getIngredientStatus = (ing: any) => {
+    const inStock = inventory.find((i) => i.productId === ing.productId);
+    if (!inStock) return { has: false, current: 0, unit: ing.unit, approx: null };
+
+    const { hasEnough, neededInBase } = RecipeService.checkIngredientAvailability(
+      ing.quantity, ing.unit,
+      inStock.quantity, inStock.unit
+    );
+
+    let approxLabel = null;
+    if (ing.unit !== inStock.unit) {
+       approxLabel = `(~${neededInBase}${inStock.unit})`;
+    }
+
+    return { has: hasEnough, current: inStock.quantity, unit: inStock.unit, approx: approxLabel };
+  };
+
+  const groupedIngredients = useMemo(() => {
+    const filtered = activeTab === 'all' 
+      ? recipe.ingredients 
+      : recipe.ingredients.filter((ing: any) => ing.defaultLocation === activeTab);
+
+    return filtered.reduce((acc: any, ing: any) => {
+      const category = ing.category || "Outros";
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(ing);
+      return acc;
+    }, {});
+  }, [recipe.ingredients, activeTab]);
+
+  const steps = recipe.instructions ? recipe.instructions.split("\n").filter((s: string) => s.trim()) : [];
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.content}>
-          {/* CAPA */}
           <View style={styles.cover}>
             {recipe.image ? (
               <Image source={{ uri: recipe.image }} style={styles.image} />
             ) : (
-              <View style={styles.placeholder}>
-                <Ionicons name="restaurant" size={40} color="#FFF" />
-              </View>
+              <View style={styles.placeholder}><Ionicons name="restaurant" size={40} color="#CCC" /></View>
             )}
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={24} color="#000" />
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={{ padding: 20 }}>
+          <ScrollView contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
             <Text style={styles.title}>{recipe.name}</Text>
+            
             <View style={styles.meta}>
-              <Text style={styles.metaText}>
-                ⏱ {recipe.preparationTime} min
-              </Text>
-              <Text style={styles.metaText}>👥 {recipe.servings} porções</Text>
+              <View style={styles.metaItem}>
+                <Ionicons name="time-outline" size={14} color="#666" />
+                <Text style={styles.metaText}>{recipe.preparationTime} min</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Ionicons name="people-outline" size={14} color="#666" />
+                <Text style={styles.metaText}>{recipe.servings} porções</Text>
+              </View>
             </View>
 
-            {/* INGREDIENTES */}
-            <Text style={styles.sectionTitle}>Ingredientes</Text>
-            <View style={styles.list}>
-              {recipe.ingredients.map((ing: any, i: number) => {
-                const status = checkItem(ing);
-                return (
-                  <View key={i} style={styles.row}>
-                    <Ionicons
-                      name={status.has ? "checkmark-circle" : "close-circle"}
-                      size={20}
-                      color={status.has ? "#34C759" : "#FF3B30"}
-                    />
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text
-                        style={[
-                          styles.ingName,
-                          !status.has && { color: "#FF3B30" },
-                        ]}
-                      >
-                        {ing.name}
-                      </Text>
-                      <Text style={styles.subText}>
-                        {ing.quantity}
-                        {ing.unit}
-                        {!status.has && status.current !== undefined
-                          ? ` (Tem: ${status.current}${status.stockUnit})`
-                          : ""}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-
-            {/* MODO DE PREPARO (PASSO A PASSO) */}
-            <Text style={styles.sectionTitle}>Modo de Preparo</Text>
-            <View style={styles.stepsContainer}>
-              {steps.map((step: string, index: number) => (
-                <View key={index} style={styles.stepRow}>
-                  <View style={styles.stepBadge}>
-                    <Text style={styles.stepIndex}>{index + 1}</Text>
-                  </View>
-                  <View style={styles.stepContent}>
-                    <Text style={styles.stepText}>{step}</Text>
-                  </View>
-                </View>
+            {/* SELETOR DE LOCAL (ABAS) - MAIS COMPACTO */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
+              {TABS.map((tab) => (
+                <TouchableOpacity 
+                  key={tab.id} 
+                  onPress={() => setActiveTab(tab.id)}
+                  style={[styles.tab, activeTab === tab.id && styles.activeTab]}
+                >
+                  <Text style={[styles.tabText, activeTab === tab.id && styles.activeTabText]}>{tab.label}</Text>
+                </TouchableOpacity>
               ))}
-              {steps.length === 0 && (
-                <Text style={{ color: "#999" }}>
-                  Nenhuma instrução cadastrada.
-                </Text>
+            </ScrollView>
+
+            {/* CARD DE INGREDIENTES COMPACTO */}
+            <View style={styles.ingCard}>
+              <Text style={styles.sectionTitleCompact}>Ingredientes</Text>
+              {Object.keys(groupedIngredients).length === 0 ? (
+                <Text style={styles.emptyText}>Nenhum item aqui.</Text>
+              ) : (
+                Object.keys(groupedIngredients).map((category) => (
+                  <View key={category}>
+                    <Text style={styles.catHeader}>{category}</Text>
+                    {groupedIngredients[category].map((ing: any, i: number) => {
+                      const status = getIngredientStatus(ing);
+                      return (
+                        <View key={i} style={styles.ingRow}>
+                          <Ionicons 
+                            name={status.has ? "checkmark-circle" : "close-circle"} 
+                            size={18} 
+                            color={status.has ? "#34C759" : "#FF3B30"} 
+                          />
+                          <Text style={[styles.ingName, !status.has && { color: "#FF3B30" }]} numberOfLines={1}>
+                            {ing.name}
+                          </Text>
+                          <Text style={styles.ingQty}>
+                            {ing.quantity}{ing.unit}
+                            {status.approx && <Text style={styles.approxText}> {status.approx}</Text>}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))
               )}
             </View>
 
-            <View style={{ height: 40 }} />
+            {/* PASSO A PASSO */}
+            <View style={styles.prepHeader}>
+              <Text style={styles.sectionTitle}>Modo de Preparo</Text>
+              <View style={styles.badge}><Text style={styles.badgeText}>{completedSteps.length}/{steps.length}</Text></View>
+            </View>
+
+            <View style={styles.stepsList}>
+              {steps.map((step: string, index: number) => {
+                const isCompleted = completedSteps.includes(index);
+                return (
+                  <TouchableOpacity 
+                    key={index} 
+                    activeOpacity={0.7} 
+                    onPress={() => toggleStep(index)}
+                    style={[styles.stepCard, isCompleted && styles.stepCardCompleted]}
+                  >
+                    <View style={[styles.stepDot, isCompleted && styles.stepDotCompleted]}>
+                      {!isCompleted && <Text style={styles.stepIndex}>{index + 1}</Text>}
+                      {isCompleted && <Ionicons name="checkmark" size={12} color="#FFF" />}
+                    </View>
+                    <Text style={[styles.stepText, isCompleted && styles.stepTextCompleted]}>{step}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            
+            <View style={{ height: 100 }} />
           </ScrollView>
 
-          <TouchableOpacity style={styles.cookBtn}>
-            <Text style={styles.cookText}>Iniciar Cozimento</Text>
-          </TouchableOpacity>
+          <View style={styles.footer}>
+            <TouchableOpacity style={styles.cookBtn}>
+              <Text style={styles.cookText}>Cozinhar Agora</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -145,71 +185,51 @@ export function RecipeDetailsModal({
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "flex-end",
-  },
-  content: {
-    backgroundColor: "#FFF",
-    height: "90%",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    overflow: "hidden",
-  },
-  cover: { height: 200, backgroundColor: "#EEE" },
-  image: { width: "100%", height: "100%" },
-  placeholder: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#CCC",
-  },
-  closeBtn: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    backgroundColor: "#FFF",
-    padding: 8,
-    borderRadius: 20,
-  },
-  title: { fontSize: 24, fontWeight: "bold", color: "#1C1C1E", marginTop: 10 },
-  meta: { flexDirection: "row", gap: 15, marginTop: 5, marginBottom: 20 },
-  metaText: { color: "#666", fontWeight: "500" },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 12,
-    marginTop: 10,
-  },
-  list: { backgroundColor: "#F9F9F9", padding: 15, borderRadius: 12 },
-  row: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
-  ingName: { fontSize: 15, color: "#333", fontWeight: "500" },
-  subText: { fontSize: 12, color: "#888" },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  content: { backgroundColor: "#F2F2F7", height: "94%", borderTopLeftRadius: 32, borderTopRightRadius: 32, overflow: "hidden" },
+  cover: { height: 180, backgroundColor: "#E5E5EA" },
+  image: { width: "100%", height: "100%", resizeMode: 'cover' },
+  placeholder: { flex: 1, alignItems: "center", justifyContent: "center" },
+  closeBtn: { position: "absolute", top: 15, right: 15, backgroundColor: "rgba(255,255,255,0.8)", padding: 6, borderRadius: 20 },
+  
+  title: { fontSize: 22, fontWeight: "bold", color: "#1C1C1E", marginBottom: 4 },
+  meta: { flexDirection: "row", gap: 15, marginBottom: 15 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { color: "#8E8E93", fontWeight: "600", fontSize: 13 },
+  
+  // ABAS COMPACTAS
+  tabScroll: { marginBottom: 12 },
+  tab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#E5E5EA', marginRight: 8 },
+  activeTab: { backgroundColor: '#007AFF' },
+  tabText: { fontSize: 12, color: '#8E8E93', fontWeight: '700' },
+  activeTabText: { color: '#FFF' },
 
-  // ESTILOS DE PASSOS
-  stepsContainer: { paddingLeft: 5 },
-  stepRow: { flexDirection: "row", marginBottom: 20 },
-  stepBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#007AFF",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 15,
-    zIndex: 1,
-  },
-  stepIndex: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
-  stepContent: { flex: 1, paddingTop: 2 },
-  stepText: { fontSize: 16, lineHeight: 24, color: "#333" },
+  // CARD DE INGREDIENTES SLIM
+  ingCard: { backgroundColor: "#FFF", padding: 12, borderRadius: 20, marginBottom: 20, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5 },
+  sectionTitleCompact: { fontSize: 14, fontWeight: "800", color: "#8E8E93", textTransform: "uppercase", marginBottom: 10, letterSpacing: 0.5 },
+  catHeader: { fontSize: 11, fontWeight: "800", color: "#007AFF", marginTop: 8, marginBottom: 4, textTransform: 'uppercase' },
+  ingRow: { flexDirection: "row", alignItems: "center", py: 4, marginBottom: 6 },
+  ingName: { flex: 1, fontSize: 14, color: "#1C1C1E", fontWeight: "500", marginLeft: 8 },
+  ingQty: { fontSize: 13, color: "#1C1C1E", fontWeight: "700" },
+  approxText: { fontSize: 11, color: '#8E8E93', fontWeight: '400' },
+  emptyText: { textAlign: 'center', color: '#CCC', paddingVertical: 10, fontSize: 12 },
 
-  cookBtn: {
-    margin: 20,
-    backgroundColor: "#34C759",
-    padding: 16,
-    borderRadius: 16,
-    alignItems: "center",
-  },
-  cookText: { color: "#FFF", fontWeight: "bold", fontSize: 16 },
+  // MODO DE PREPARO
+  prepHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: "800", color: "#1C1C1E" },
+  badge: { backgroundColor: '#007AFF15', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  badgeText: { fontSize: 12, fontWeight: '700', color: '#007AFF' },
+  
+  stepsList: { gap: 8 },
+  stepCard: { flexDirection: "row", backgroundColor: "#FFF", padding: 12, borderRadius: 16, alignItems: 'center' },
+  stepCardCompleted: { opacity: 0.6, backgroundColor: '#F2F2F7' },
+  stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: "#F2F2F7", justifyContent: "center", alignItems: "center", marginRight: 10 },
+  stepDotCompleted: { backgroundColor: '#34C759' },
+  stepIndex: { color: "#8E8E93", fontWeight: "800", fontSize: 11 },
+  stepText: { flex: 1, fontSize: 14, color: "#1C1C1E", lineHeight: 20 },
+  stepTextCompleted: { textDecorationLine: 'line-through', color: '#8E8E93' },
+
+  footer: { position: 'absolute', bottom: 0, width: '100%', padding: 16, backgroundColor: '#F8F9FA', borderTopWidth: 1, borderTopColor: '#E5E5EA' },
+  cookBtn: { backgroundColor: "#34C759", padding: 16, borderRadius: 16, alignItems: "center" },
+  cookText: { color: "#FFF", fontWeight: "800", fontSize: 16 },
 });

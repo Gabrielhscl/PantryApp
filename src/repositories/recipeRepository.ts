@@ -15,6 +15,8 @@ export const RecipeRepository = {
             productId: recipeIngredients.productId,
             name: products.name,
             image: products.image,
+            category: products.category, // <-- ADICIONADO: Puxa a categoria do catálogo
+            defaultLocation: products.defaultLocation, // <-- ADICIONADO
             defaultUnit: products.defaultUnit, // Importante para recuperar a unidade certa
             quantity: recipeIngredients.quantity,
             unit: recipeIngredients.unit,

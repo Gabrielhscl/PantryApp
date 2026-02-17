@@ -29,6 +29,24 @@ export function RecipeDetailsModal({ visible, onClose, recipe, inventory }: Prop
   const [activeTab, setActiveTab] = useState('all');
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
 
+  // 1. O Hook useMemo agora fica ANTES do 'if return'
+  const groupedIngredients = useMemo(() => {
+    // Verificamos se recipe e recipe.ingredients existem
+    if (!recipe || !recipe.ingredients) return {};
+
+    const filtered = activeTab === 'all' 
+      ? recipe.ingredients 
+      : recipe.ingredients.filter((ing: any) => ing.defaultLocation === activeTab);
+
+    return filtered.reduce((acc: any, ing: any) => {
+      const category = ing.category || "Outros";
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(ing);
+      return acc;
+    }, {});
+  }, [recipe, activeTab]); // Adicionamos 'recipe' nas dependências
+
+  // 2. AGORA SIM, colocamos o 'if return' (depois de todos os Hooks)
   if (!recipe) return null;
 
   const toggleStep = (index: number) => {
@@ -53,19 +71,6 @@ export function RecipeDetailsModal({ visible, onClose, recipe, inventory }: Prop
 
     return { has: hasEnough, current: inStock.quantity, unit: inStock.unit, approx: approxLabel };
   };
-
-  const groupedIngredients = useMemo(() => {
-    const filtered = activeTab === 'all' 
-      ? recipe.ingredients 
-      : recipe.ingredients.filter((ing: any) => ing.defaultLocation === activeTab);
-
-    return filtered.reduce((acc: any, ing: any) => {
-      const category = ing.category || "Outros";
-      if (!acc[category]) acc[category] = [];
-      acc[category].push(ing);
-      return acc;
-    }, {});
-  }, [recipe.ingredients, activeTab]);
 
   const steps = recipe.instructions ? recipe.instructions.split("\n").filter((s: string) => s.trim()) : [];
 
@@ -98,7 +103,6 @@ export function RecipeDetailsModal({ visible, onClose, recipe, inventory }: Prop
               </View>
             </View>
 
-            {/* SELETOR DE LOCAL (ABAS) - MAIS COMPACTO */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
               {TABS.map((tab) => (
                 <TouchableOpacity 
@@ -111,7 +115,6 @@ export function RecipeDetailsModal({ visible, onClose, recipe, inventory }: Prop
               ))}
             </ScrollView>
 
-            {/* CARD DE INGREDIENTES COMPACTO */}
             <View style={styles.ingCard}>
               <Text style={styles.sectionTitleCompact}>Ingredientes</Text>
               {Object.keys(groupedIngredients).length === 0 ? (
@@ -144,7 +147,6 @@ export function RecipeDetailsModal({ visible, onClose, recipe, inventory }: Prop
               )}
             </View>
 
-            {/* PASSO A PASSO */}
             <View style={styles.prepHeader}>
               <Text style={styles.sectionTitle}>Modo de Preparo</Text>
               <View style={styles.badge}><Text style={styles.badgeText}>{completedSteps.length}/{steps.length}</Text></View>
@@ -197,14 +199,12 @@ const styles = StyleSheet.create({
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { color: "#8E8E93", fontWeight: "600", fontSize: 13 },
   
-  // ABAS COMPACTAS
   tabScroll: { marginBottom: 12 },
   tab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#E5E5EA', marginRight: 8 },
   activeTab: { backgroundColor: '#007AFF' },
   tabText: { fontSize: 12, color: '#8E8E93', fontWeight: '700' },
   activeTabText: { color: '#FFF' },
 
-  // CARD DE INGREDIENTES SLIM
   ingCard: { backgroundColor: "#FFF", padding: 12, borderRadius: 20, marginBottom: 20, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5 },
   sectionTitleCompact: { fontSize: 14, fontWeight: "800", color: "#8E8E93", textTransform: "uppercase", marginBottom: 10, letterSpacing: 0.5 },
   catHeader: { fontSize: 11, fontWeight: "800", color: "#007AFF", marginTop: 8, marginBottom: 4, textTransform: 'uppercase' },
@@ -214,7 +214,6 @@ const styles = StyleSheet.create({
   approxText: { fontSize: 11, color: '#8E8E93', fontWeight: '400' },
   emptyText: { textAlign: 'center', color: '#CCC', paddingVertical: 10, fontSize: 12 },
 
-  // MODO DE PREPARO
   prepHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: "800", color: "#1C1C1E" },
   badge: { backgroundColor: '#007AFF15', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },

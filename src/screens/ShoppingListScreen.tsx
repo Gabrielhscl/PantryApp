@@ -1,38 +1,44 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { 
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
-  Modal, TextInput, KeyboardAvoidingView, Platform, ScrollView
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Alert
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera"; 
 import { useFocusEffect } from "@react-navigation/native";
 
-import { ScreenHeader } from "../components/ui/ScreenHeader";
-import { FloatingButton } from "../components/ui/FloatingButton";
-import { Autocomplete } from "../components/Autocomplete";
-import { ShoppingItemCard } from "../components/ShoppingItemCard";
-import { AlertModal } from "../components/modals/AlertModal";
+import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { FloatingButton } from "@/components/ui/FloatingButton";
+import { BottomSheetModal } from "@/components/ui/BottomSheetModal";
+import { CustomInput } from "@/components/ui/CustomInput";
+import { PrimaryButton } from "@/components/ui/PrimaryButton";
+import { Autocomplete } from "@/components/Autocomplete";
+import { ShoppingItemCard } from "@/components/ShoppingItemCard";
+import { AlertModal } from "@/components/modals/AlertModal";
 
-import { ShoppingRepository } from "../repositories/shoppingRepository";
-import { ProductRepository } from "../repositories/productRepository";
-import { InventoryRepository } from "../repositories/inventoryRepository";
-import { ProductService } from "../services/productService";
-import { useShoppingList } from "../hooks/useShoppingList";
+import { ShoppingRepository } from "@/repositories/shoppingRepository";
+import { ProductRepository } from "@/repositories/productRepository";
+import { InventoryRepository } from "@/repositories/inventoryRepository";
+import { ProductService } from "@/services/productService";
+import { useShoppingList } from "@/hooks/useShoppingList";
+import { useToast } from "@/contexts/ToastContext";
+import { COLORS, SPACING, RADIUS } from "@/constants/theme";
+import { Product } from "@/types";
 
 export default function ShoppingListScreen({ navigation }: any) {
   const { items, refresh, toggleItem, removeItem } = useShoppingList();
+  const { showToast } = useToast();
   
   const [modalVisible, setModalVisible] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [alertConfig, setAlertConfig] = useState({ visible: false, title: "", message: "", id: "", name: "" });
 
-  const [catalog, setCatalog] = useState<any[]>([]);
+  const [catalog, setCatalog] = useState<Product[]>([]);
 
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState("1");
   const [inputMode, setInputMode] = useState<'pack' | 'measure'>('pack');
 
@@ -49,7 +55,7 @@ export default function ShoppingListScreen({ navigation }: any) {
   };
 
   useEffect(() => {
-    if (selectedProduct && selectedProduct.packSize > 0) {
+    if (selectedProduct && selectedProduct.packSize && selectedProduct.packSize > 0) {
       setInputMode('pack');
     } else {
       setInputMode('pack');
@@ -72,10 +78,11 @@ export default function ShoppingListScreen({ navigation }: any) {
           const all = await ProductRepository.findAll();
           product = all.find(p => p.id === newId);
           setCatalog(all);
+          showToast("Produto adicionado ao catálogo!", "success");
         } else {
-          return Alert.alert("Ops!", "Produto não encontrado. Cadastre-o primeiro.");
+          return showToast("Produto não encontrado. Registe-o primeiro.", "error");
         }
-      } catch (e) { return Alert.alert("Erro", "Falha na leitura."); }
+      } catch (e) { return showToast("Falha na leitura do código.", "error"); }
     }
     
     if (product) {
@@ -84,20 +91,23 @@ export default function ShoppingListScreen({ navigation }: any) {
     }
   };
 
-  const selectProduct = (product: any) => {
+  const selectProduct = (product: Product) => {
     setSelectedProduct(product);
     setQuery(product.name);
   };
 
   const handleSave = async () => {
-    if (!query.trim() && !selectedProduct) return;
+    if (!query.trim() && !selectedProduct) {
+        showToast("Selecione um produto ou digite um nome", "error");
+        return;
+    }
 
     const qtyInput = parseFloat(quantity) || 0;
     let finalQuantity = qtyInput;
     let finalUnit = selectedProduct?.defaultUnit || 'un';
 
     if (inputMode === 'pack') {
-      if (selectedProduct?.packSize > 0) {
+      if (selectedProduct?.packSize && selectedProduct.packSize > 0) {
         finalQuantity = qtyInput * selectedProduct.packSize;
         finalUnit = selectedProduct.packUnit || selectedProduct.defaultUnit;
       } else {
@@ -120,12 +130,14 @@ export default function ShoppingListScreen({ navigation }: any) {
     try {
       if (editingItemId) {
         await ShoppingRepository.updateItem(editingItemId, data);
+        showToast("Item atualizado com sucesso!", "success");
       } else {
         await ShoppingRepository.addItem(data);
+        showToast("Item adicionado à lista!", "success");
       }
       closeModal();
       refresh();
-    } catch (e) { Alert.alert("Erro", "Falha ao salvar."); }
+    } catch (e) { showToast("Erro ao guardar item", "error"); }
   };
 
   const handleEdit = (item: any) => {
@@ -148,11 +160,11 @@ export default function ShoppingListScreen({ navigation }: any) {
 
   const handleFinishShopping = async () => {
     const checkedItems = items.filter(i => i.isChecked);
-    if (checkedItems.length === 0) return Alert.alert("Lista Vazia", "Marque os itens comprados antes de finalizar.");
+    if (checkedItems.length === 0) return showToast("Marque os itens comprados antes de finalizar.", "warning");
 
     Alert.alert(
       "Finalizar Compras", 
-      `Mover ${checkedItems.length} itens para o estoque?`,
+      `Mover ${checkedItems.length} itens para o stock?`,
       [
         { text: "Cancelar", style: "cancel" },
         { text: "Confirmar", onPress: async () => {
@@ -171,7 +183,7 @@ export default function ShoppingListScreen({ navigation }: any) {
               await ShoppingRepository.deleteItem(item.id);
             }
             refresh();
-            Alert.alert("Sucesso", "Estoque atualizado!");
+            showToast("Stock atualizado com sucesso!", "success");
         }}
       ]
     );
@@ -182,7 +194,7 @@ export default function ShoppingListScreen({ navigation }: any) {
     setEditingItemId(null); setQuery(""); setSelectedProduct(null); setQuantity("1");
   };
 
-  const grouped = items.reduce((acc: any, item) => {
+  const grouped = items.reduce((acc: any, item: any) => {
     const cat = item.category || "Outros";
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(item);
@@ -191,9 +203,17 @@ export default function ShoppingListScreen({ navigation }: any) {
 
   const getLocationInfo = (loc: string) => {
     switch (loc) {
-      case 'fridge': return { label: 'Geladeira', icon: 'thermometer-outline', color: '#007AFF', bg: '#E3F2FD' };
-      case 'freezer': return { label: 'Freezer', icon: 'snow-outline', color: '#00BCD4', bg: '#E0F7FA' };
-      default: return { label: 'Armário', icon: 'cube-outline', color: '#FF9500', bg: '#FFF3E0' };
+      case 'fridge': return COLORS.locations.fridge;
+      case 'freezer': return COLORS.locations.freezer;
+      default: return COLORS.locations.pantry;
+    }
+  };
+
+  const getLocationLabel = (loc: string) => {
+    switch (loc) {
+      case 'fridge': return 'Geladeira';
+      case 'freezer': return 'Freezer';
+      default: return 'Armário';
     }
   };
 
@@ -202,7 +222,7 @@ export default function ShoppingListScreen({ navigation }: any) {
     const qty = parseFloat(quantity) || 0;
 
     if (inputMode === 'pack') {
-      if (selectedProduct.packSize > 0) {
+      if (selectedProduct.packSize && selectedProduct.packSize > 0) {
         const total = qty * selectedProduct.packSize;
         const unit = selectedProduct.packUnit || selectedProduct.defaultUnit;
         
@@ -237,11 +257,11 @@ export default function ShoppingListScreen({ navigation }: any) {
   };
 
   if (isScanning) {
-    if (!permission?.granted) return <View style={styles.center}><TouchableOpacity onPress={requestPermission} style={styles.permBtn}><Text style={{color:'#FFF'}}>Permitir Câmera</Text></TouchableOpacity></View>;
+    if (!permission?.granted) return <View style={styles.center}><TouchableOpacity onPress={requestPermission} style={styles.permBtn}><Text style={{color: COLORS.text.light}}>Permitir Câmara</Text></TouchableOpacity></View>;
     return (
       <View style={styles.cameraContainer}>
         <CameraView style={StyleSheet.absoluteFillObject} onBarcodeScanned={handleBarCodeScanned} />
-        <TouchableOpacity onPress={() => setIsScanning(false)} style={styles.closeCamera}><Ionicons name="close" size={30} color="#FFF" /></TouchableOpacity>
+        <TouchableOpacity onPress={() => setIsScanning(false)} style={styles.closeCamera}><Ionicons name="close" size={30} color={COLORS.text.light} /></TouchableOpacity>
       </View>
     );
   }
@@ -250,27 +270,21 @@ export default function ShoppingListScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScreenHeader title="Lista de Compras" subtitle={`${items.length} itens planejados`} />
+      <ScreenHeader title="Lista de Compras" subtitle={`${items.length} itens planeados`} />
 
       <FlatList
         data={Object.keys(grouped)}
         keyExtractor={(cat) => cat}
         style={styles.list}
-        contentContainerStyle={{ padding: 20, paddingBottom: 180 }}
+        contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 180 }}
         ListHeaderComponent={
-          <TouchableOpacity 
-            style={styles.templateBanner} 
-            activeOpacity={0.9}
-            onPress={() => navigation.navigate('Templates')}
-          >
-            <View style={styles.bannerIcon}>
-              <Ionicons name="list" size={24} color="#FFF" />
-            </View>
+          <TouchableOpacity style={styles.templateBanner} activeOpacity={0.9} onPress={() => navigation.navigate('Templates')}>
+            <View style={styles.bannerIcon}><Ionicons name="list" size={24} color={COLORS.text.light} /></View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.bannerTitle}>Minhas Listas Fixas</Text>
-              <Text style={styles.bannerSub}>Gerencie suas listas recorrentes...</Text>
+              <Text style={styles.bannerTitle}>As Minhas Listas Fixas</Text>
+              <Text style={styles.bannerSub}>Gira as suas listas recorrentes...</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#FFF" opacity={0.8} />
+            <Ionicons name="chevron-forward" size={20} color={COLORS.text.light} opacity={0.8} />
           </TouchableOpacity>
         }
         renderItem={({ item: category }) => (
@@ -278,8 +292,7 @@ export default function ShoppingListScreen({ navigation }: any) {
             <Text style={styles.sectionTitle}>{category}</Text>
             {grouped[category].map((item: any) => (
               <ShoppingItemCard 
-                key={item.id}
-                item={item}
+                key={item.id} item={item}
                 onToggle={() => toggleItem(item.id, item.isChecked)}
                 onEdit={() => handleEdit(item)}
                 onDelete={() => setAlertConfig({ visible: true, title: "Remover", message: `Excluir ${item.name}?`, id: item.id, name: item.name })}
@@ -289,9 +302,9 @@ export default function ShoppingListScreen({ navigation }: any) {
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <View style={styles.emptyIcon}><Ionicons name="cart-outline" size={40} color="#CCC" /></View>
+            <View style={styles.emptyIcon}><Ionicons name="cart-outline" size={40} color={COLORS.text.secondary} /></View>
             <Text style={styles.emptyText}>Lista vazia</Text>
-            <Text style={styles.emptySub}>Adicione itens ou use suas listas fixas.</Text>
+            <Text style={styles.emptySub}>Adicione itens ou use as suas listas fixas.</Text>
           </View>
         }
       />
@@ -301,133 +314,103 @@ export default function ShoppingListScreen({ navigation }: any) {
       <View style={styles.footer}>
         <TouchableOpacity 
           style={[styles.finishBtn, checkedCount === 0 && styles.finishBtnDisabled]} 
-          onPress={handleFinishShopping}
-          disabled={checkedCount === 0}
+          onPress={handleFinishShopping} disabled={checkedCount === 0}
         >
           <View style={styles.finishInfo}>
             <Text style={styles.finishText}>Finalizar Compras</Text>
             {checkedCount > 0 && <Text style={styles.finishSub}>{checkedCount} itens selecionados</Text>}
           </View>
           <View style={styles.arrowCircle}>
-              <Ionicons name="arrow-forward" size={20} color={checkedCount > 0 ? "#007AFF" : "#999"} />
+              <Ionicons name="arrow-forward" size={20} color={checkedCount > 0 ? COLORS.primary : COLORS.text.secondary} />
           </View>
         </TouchableOpacity>
       </View>
 
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity style={styles.backdrop} onPress={closeModal} />
-          
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingItemId ? "Editar Item" : "Adicionar à Lista"}</Text>
-              <TouchableOpacity onPress={closeModal} style={styles.closeBtn}>
-                  <Ionicons name="close" size={24} color="#555" />
-              </TouchableOpacity>
+      <BottomSheetModal visible={modalVisible} onClose={closeModal} title={editingItemId ? "Editar Item" : "Adicionar à Lista"}>
+        <Text style={styles.label}>Procurar Produto</Text>
+        <View style={styles.searchRow}>
+          <View style={{ flex: 1 }}>
+            <Autocomplete 
+              placeholder="Ex: Leite, Arroz..." data={catalog} value={query} 
+              onChangeText={setQuery} onSelect={selectProduct} closeOnSelect={false}
+            />
+          </View>
+          {!editingItemId && (
+            <TouchableOpacity style={styles.barcodeBtn} onPress={() => setIsScanning(true)}>
+              <Ionicons name="barcode-outline" size={24} color={COLORS.text.light} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {selectedProduct && (
+          <View style={styles.productDetailCard}>
+            <View style={styles.prodHeader}>
+                <Text style={styles.prodName}>{selectedProduct.name}</Text>
+                <Text style={styles.prodBrand}>{selectedProduct.brand}</Text>
             </View>
             
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              <Text style={styles.label}>Buscar Produto</Text>
-              <View style={styles.searchRow}>
-                <View style={{ flex: 1 }}>
-                  <Autocomplete 
-                    placeholder="Ex: Leite, Arroz..." 
-                    data={catalog}
-                    value={query} 
-                    onChangeText={setQuery} 
-                    onSelect={selectProduct}
-                    closeOnSelect={false}
-                  />
-                </View>
-                {!editingItemId && (
-                  <TouchableOpacity style={styles.barcodeBtn} onPress={() => setIsScanning(true)}>
-                    <Ionicons name="barcode-outline" size={24} color="#FFF" />
-                  </TouchableOpacity>
+            <View style={styles.prodRow}>
+                {selectedProduct.packSize && selectedProduct.packSize > 0 && (
+                    <View style={styles.badge}>
+                        <Ionicons name="cube" size={12} color={COLORS.text.secondary} />
+                        <Text style={styles.badgeText}>{selectedProduct.packSize}{selectedProduct.packUnit} / un</Text>
+                    </View>
                 )}
-              </View>
+                {(() => {
+                    const loc = getLocationInfo(selectedProduct.defaultLocation || 'pantry');
+                    const label = getLocationLabel(selectedProduct.defaultLocation || 'pantry');
+                    return (
+                        <View style={[styles.badge, { backgroundColor: loc.bg }]}>
+                            <Ionicons name="location" size={12} color={loc.icon} />
+                            <Text style={[styles.badgeText, { color: loc.icon }]}>{label}</Text>
+                        </View>
+                    );
+                })()}
+            </View>
 
-              {/* CARD DETALHES DO PRODUTO */}
-              {selectedProduct && (
-                <View style={styles.productDetailCard}>
-                  <View style={styles.prodHeader}>
-                      <Text style={styles.prodName}>{selectedProduct.name}</Text>
-                      <Text style={styles.prodBrand}>{selectedProduct.brand}</Text>
-                  </View>
-                  
-                  <View style={styles.prodRow}>
-                      {selectedProduct.packSize > 0 && (
-                          <View style={styles.badge}>
-                              <Ionicons name="cube" size={12} color="#555" />
-                              <Text style={styles.badgeText}>
-                                  {selectedProduct.packSize}{selectedProduct.packUnit} / un
-                              </Text>
-                          </View>
-                      )}
-
-                      {(() => {
-                          const loc = getLocationInfo(selectedProduct.defaultLocation);
-                          return (
-                              <View style={[styles.badge, { backgroundColor: loc.bg }]}>
-                                  <Ionicons name={loc.icon as any} size={12} color={loc.color} />
-                                  <Text style={[styles.badgeText, { color: loc.color }]}>{loc.label}</Text>
-                              </View>
-                          );
-                      })()}
-                  </View>
-
-                  {/* TAGS DE ALERTAS (Visual Consistente) */}
-                  {selectedProduct.allergens ? (
-                      <View style={styles.tagsRow}>
-                          {selectedProduct.allergens.split(',').filter((t: string) => t.trim()).map((tag: string, index: number) => (
-                              <View key={index} style={styles.tag}>
-                                  <Text style={styles.tagText}>{tag.trim()}</Text>
-                              </View>
-                          ))}
-                      </View>
-                  ) : null}
+            {selectedProduct.allergens ? (
+                <View style={styles.tagsRow}>
+                    {selectedProduct.allergens.split(',').filter((t: string) => t.trim()).map((tag: string, index: number) => (
+                        <View key={index} style={styles.tag}>
+                            <Text style={styles.tagText}>{tag.trim()}</Text>
+                        </View>
+                    ))}
                 </View>
-              )}
+            ) : null}
+          </View>
+        )}
 
-              {/* TOGGLE SEMPRE VISÍVEL */}
-              {selectedProduct && (
-                  <View style={styles.toggleContainer}>
-                      <TouchableOpacity 
-                      style={[styles.toggleBtn, inputMode === 'pack' && styles.toggleBtnActive]} 
-                      onPress={() => setInputMode('pack')}
-                      >
-                      <Text style={[styles.toggleText, inputMode === 'pack' && styles.toggleTextActive]}>Por Unidade</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                      style={[styles.toggleBtn, inputMode === 'measure' && styles.toggleBtnActive]} 
-                      onPress={() => setInputMode('measure')}
-                      >
-                      <Text style={[styles.toggleText, inputMode === 'measure' && styles.toggleTextActive]}>Por Peso/Vol</Text>
-                      </TouchableOpacity>
-                  </View>
-              )}
+        {selectedProduct && (
+            <View style={styles.toggleContainer}>
+                <TouchableOpacity 
+                  style={[styles.toggleBtn, inputMode === 'pack' && styles.toggleBtnActive]} 
+                  onPress={() => setInputMode('pack')}
+                >
+                  <Text style={[styles.toggleText, inputMode === 'pack' && styles.toggleTextActive]}>Por Unidade</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.toggleBtn, inputMode === 'measure' && styles.toggleBtnActive]} 
+                  onPress={() => setInputMode('measure')}
+                >
+                  <Text style={[styles.toggleText, inputMode === 'measure' && styles.toggleTextActive]}>Por Peso/Vol</Text>
+                </TouchableOpacity>
+            </View>
+        )}
 
-              <Text style={[styles.label, { marginTop: 20 }]}>
-                {inputMode === 'pack' ? "Quantas unidades?" : `Quantidade total (${selectedProduct?.defaultUnit || 'un'})`}
-              </Text>
-              
-              <TextInput 
-                  style={styles.qtyInput} 
-                  value={quantity} 
-                  onChangeText={setQuantity} 
-                  keyboardType="numeric" 
-                  placeholder="1"
-              />
-              
-              {getCalculationPreview()}
+        <CustomInput 
+            label={inputMode === 'pack' ? "Quantas unidades?" : `Quantidade total (${selectedProduct?.defaultUnit || 'un'})`}
+            value={quantity} onChangeText={setQuantity} keyboardType="numeric" placeholder="1"
+            style={{ marginTop: SPACING.md }}
+        />
+        
+        {getCalculationPreview()}
 
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-                <Text style={styles.saveText}>{editingItemId ? "Salvar Alterações" : "Adicionar à Lista"}</Text>
-              </TouchableOpacity>
-              <View style={{height: 20}} />
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+        <PrimaryButton 
+            title={editingItemId ? "Guardar Alterações" : "Adicionar à Lista"}
+            onPress={handleSave}
+            containerStyle={{ marginTop: SPACING.lg }}
+        />
+      </BottomSheetModal>
 
       <AlertModal 
         visible={alertConfig.visible} title={alertConfig.title} message={alertConfig.message} type="danger"
@@ -439,62 +422,58 @@ export default function ShoppingListScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F2F2F7" },
+  container: { flex: 1, backgroundColor: COLORS.background },
   list: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  permBtn: { backgroundColor: '#007AFF', padding: 12, borderRadius: 10 },
+  permBtn: { backgroundColor: COLORS.primary, padding: 12, borderRadius: RADIUS.md },
   cameraContainer: { flex: 1, backgroundColor: '#000' },
-  closeCamera: { position: 'absolute', top: 50, right: 30, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 25, padding: 10 },
-  templateBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#007AFF', padding: 16, borderRadius: 20, marginBottom: 25, shadowColor: "#007AFF", shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
-  bannerIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  bannerTitle: { fontSize: 16, fontWeight: '700', color: '#FFF' },
+  closeCamera: { position: 'absolute', top: 50, right: 30, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: RADIUS.xl, padding: 10 },
+  
+  templateBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary, padding: SPACING.md, borderRadius: RADIUS.lg, marginBottom: SPACING.lg, shadowColor: COLORS.primary, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  bannerIcon: { width: 40, height: 40, borderRadius: RADIUS.md, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: SPACING.md },
+  bannerTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text.light },
   bannerSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
-  section: { marginBottom: 20 },
-  sectionTitle: { fontSize: 13, fontWeight: "800", color: "#8E8E93", textTransform: "uppercase", marginBottom: 10, letterSpacing: 1, marginLeft: 4 },
+  
+  section: { marginBottom: SPACING.lg },
+  sectionTitle: { fontSize: 13, fontWeight: "800", color: COLORS.text.secondary, textTransform: "uppercase", marginBottom: 10, letterSpacing: 1, marginLeft: 4 },
+  
   empty: { alignItems: "center", marginTop: 60, paddingHorizontal: 40 },
-  emptyIcon: { width: 80, height: 80, backgroundColor: '#E5E5EA', borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  emptyText: { fontSize: 18, fontWeight: '700', color: '#1C1C1E', marginBottom: 8 },
-  emptySub: { fontSize: 14, color: '#8E8E93', textAlign: 'center', lineHeight: 20 },
-  footer: { position: 'absolute', bottom: 0, width: '100%', padding: 20, backgroundColor: 'rgba(255,255,255,0.95)', borderTopWidth: 1, borderTopColor: '#EEE' },
-  finishBtn: { backgroundColor: "#1C1C1E", padding: 16, borderRadius: 18, flexDirection: "row", justifyContent: "space-between", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
-  finishBtnDisabled: { backgroundColor: "#E5E5EA", shadowOpacity: 0 },
+  emptyIcon: { width: 80, height: 80, backgroundColor: COLORS.border, borderRadius: 40, justifyContent: 'center', alignItems: 'center', marginBottom: SPACING.md },
+  emptyText: { fontSize: 18, fontWeight: '700', color: COLORS.text.primary, marginBottom: 8 },
+  emptySub: { fontSize: 14, color: COLORS.text.secondary, textAlign: 'center', lineHeight: 20 },
+  
+  footer: { position: 'absolute', bottom: 0, width: '100%', padding: SPACING.lg, backgroundColor: 'rgba(255,255,255,0.95)', borderTopWidth: 1, borderTopColor: COLORS.border },
+  finishBtn: { backgroundColor: COLORS.text.primary, padding: SPACING.md, borderRadius: RADIUS.lg, flexDirection: "row", justifyContent: "space-between", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  finishBtnDisabled: { backgroundColor: COLORS.border, shadowOpacity: 0 },
   finishInfo: { flex: 1 },
-  finishText: { color: "#FFF", fontSize: 17, fontWeight: "700" },
+  finishText: { color: COLORS.text.light, fontSize: 17, fontWeight: "700" },
   finishSub: { color: "#AAA", fontSize: 12, marginTop: 2 },
-  arrowCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject },
-  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '85%', shadowColor: "#000", shadowOffset: {width: 0, height: -4}, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#F2F2F7' },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: '#1C1C1E' },
-  closeBtn: { padding: 6, backgroundColor: '#F2F2F7', borderRadius: 20 },
-  modalBody: { padding: 24 },
-  label: { fontSize: 13, fontWeight: '700', color: '#8E8E93', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-  searchRow: { flexDirection: 'row', gap: 12 },
-  barcodeBtn: { backgroundColor: '#1C1C1E', borderRadius: 16, width: 54, justifyContent: 'center', alignItems: 'center' },
-  qtyInput: { backgroundColor: '#F2F2F7', padding: 16, borderRadius: 16, fontSize: 18, fontWeight: '600', color: '#1C1C1E' },
-  saveBtn: { backgroundColor: '#007AFF', paddingVertical: 18, borderRadius: 18, alignItems: 'center', marginTop: 25, shadowColor: "#007AFF", shadowOpacity: 0.25, shadowRadius: 8 },
-  saveText: { color: '#FFF', fontWeight: 'bold', fontSize: 17 },
-  productDetailCard: { backgroundColor: '#F9F9F9', borderRadius: 16, padding: 16, marginTop: 15, borderWidth: 1, borderColor: '#EEE' },
+  arrowCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.card, justifyContent: 'center', alignItems: 'center' },
+  
+  label: { fontSize: 13, fontWeight: '700', color: COLORS.text.secondary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  searchRow: { flexDirection: 'row', gap: SPACING.sm },
+  barcodeBtn: { backgroundColor: COLORS.text.primary, borderRadius: RADIUS.lg, width: 54, justifyContent: 'center', alignItems: 'center' },
+  
+  productDetailCard: { backgroundColor: COLORS.background, borderRadius: RADIUS.lg, padding: SPACING.md, marginTop: SPACING.md, borderWidth: 1, borderColor: COLORS.border },
   prodHeader: { marginBottom: 8 },
-  prodName: { fontSize: 16, fontWeight: '700', color: '#1C1C1E' },
-  prodBrand: { fontSize: 12, color: '#8E8E93' },
+  prodName: { fontSize: 16, fontWeight: '700', color: COLORS.text.primary },
+  prodBrand: { fontSize: 12, color: COLORS.text.secondary },
   prodRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 8 },
-  badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEE', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
+  badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.border, paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.sm, gap: 4 },
   badgeText: { fontSize: 11, fontWeight: '600', color: '#555' },
   
-  // ESTILOS DAS TAGS (IGUAL AO ESTOQUE)
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 8 },
   tag: { backgroundColor: '#FF704320', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 0.5, borderColor: '#FF7043' },
   tagText: { fontSize: 9, color: '#FF7043', fontWeight: '800', textTransform: 'uppercase' },
 
-  toggleContainer: { flexDirection: 'row', backgroundColor: '#F2F2F7', borderRadius: 12, padding: 4, marginTop: 20 },
-  toggleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
-  toggleBtnActive: { backgroundColor: '#FFF', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
-  toggleText: { fontSize: 13, fontWeight: '600', color: '#8E8E93' },
-  toggleTextActive: { color: '#007AFF' },
+  toggleContainer: { flexDirection: 'row', backgroundColor: COLORS.background, borderRadius: RADIUS.md, padding: 4, marginTop: SPACING.lg },
+  toggleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: RADIUS.sm },
+  toggleBtnActive: { backgroundColor: COLORS.card, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
+  toggleText: { fontSize: 13, fontWeight: '600', color: COLORS.text.secondary },
+  toggleTextActive: { color: COLORS.primary },
+  
   calcPreview: { marginTop: 12, alignItems: 'flex-end' },
-  calcLabel: { fontSize: 11, color: '#8E8E93', fontWeight: '600', textTransform: 'uppercase' },
-  calcValue: { fontSize: 20, color: '#007AFF', fontWeight: '800' },
-  calcSub: { fontSize: 12, color: '#8E8E93' },
+  calcLabel: { fontSize: 11, color: COLORS.text.secondary, fontWeight: '600', textTransform: 'uppercase' },
+  calcValue: { fontSize: 20, color: COLORS.primary, fontWeight: '800' },
+  calcSub: { fontSize: 12, color: COLORS.text.secondary },
 });

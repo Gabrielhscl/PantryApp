@@ -1,13 +1,12 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { 
   View, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
-  Modal, TextInput, KeyboardAvoidingView, Platform, ScrollView // <--- ADICIONADO AQUI
+  Modal, TextInput, KeyboardAvoidingView, Platform, ScrollView
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera"; 
 import { useFocusEffect } from "@react-navigation/native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { ScreenHeader } from "../components/ui/ScreenHeader";
 import { FloatingButton } from "../components/ui/FloatingButton";
@@ -24,7 +23,6 @@ import { useShoppingList } from "../hooks/useShoppingList";
 export default function ShoppingListScreen({ navigation }: any) {
   const { items, refresh, toggleItem, removeItem } = useShoppingList();
   
-  // Estados de Interface
   const [modalVisible, setModalVisible] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
@@ -32,13 +30,10 @@ export default function ShoppingListScreen({ navigation }: any) {
 
   const [catalog, setCatalog] = useState<any[]>([]);
 
-  // Estados de Formulário
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [quantity, setQuantity] = useState("1");
-  
-  // Modo de entrada: 'pack' (unidades de embalagem) ou 'measure' (total direto)
   const [inputMode, setInputMode] = useState<'pack' | 'measure'>('pack');
 
   useFocusEffect(useCallback(() => { 
@@ -54,15 +49,12 @@ export default function ShoppingListScreen({ navigation }: any) {
   };
 
   useEffect(() => {
-    // Se o produto selecionado tem tamanho de embalagem, sugere usar "unidades"
     if (selectedProduct && selectedProduct.packSize > 0) {
       setInputMode('pack');
     } else {
-      setInputMode('measure');
+      setInputMode('pack');
     }
   }, [selectedProduct]);
-
-  // --- LÓGICA DE NEGÓCIO ---
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     setIsScanning(false);
@@ -104,12 +96,18 @@ export default function ShoppingListScreen({ navigation }: any) {
     let finalQuantity = qtyInput;
     let finalUnit = selectedProduct?.defaultUnit || 'un';
 
-    // CÁLCULO INTELIGENTE
-    if (inputMode === 'pack' && selectedProduct?.packSize > 0) {
-      // Ex: 5 unidades * 100g = 500g
-      finalQuantity = qtyInput * selectedProduct.packSize;
-      finalUnit = selectedProduct.packUnit || selectedProduct.defaultUnit; 
-    } 
+    if (inputMode === 'pack') {
+      if (selectedProduct?.packSize > 0) {
+        finalQuantity = qtyInput * selectedProduct.packSize;
+        finalUnit = selectedProduct.packUnit || selectedProduct.defaultUnit;
+      } else {
+        finalQuantity = qtyInput;
+        finalUnit = 'un';
+      }
+    } else {
+      finalQuantity = qtyInput;
+      finalUnit = selectedProduct?.defaultUnit || 'un';
+    }
 
     const data = {
       productId: selectedProduct?.id || null,
@@ -138,7 +136,6 @@ export default function ShoppingListScreen({ navigation }: any) {
     
     if (originalProduct) {
         setSelectedProduct(originalProduct);
-        // Na edição, mostra o valor total já calculado
         setInputMode('measure'); 
         setQuantity(String(item.quantity));
     } else {
@@ -192,8 +189,6 @@ export default function ShoppingListScreen({ navigation }: any) {
     return acc;
   }, {});
 
-  // --- HELPERS VISUAIS ---
-
   const getLocationInfo = (loc: string) => {
     switch (loc) {
       case 'fridge': return { label: 'Geladeira', icon: 'thermometer-outline', color: '#007AFF', bg: '#E3F2FD' };
@@ -206,27 +201,40 @@ export default function ShoppingListScreen({ navigation }: any) {
     if (!selectedProduct || !quantity) return null;
     const qty = parseFloat(quantity) || 0;
 
-    if (inputMode === 'pack' && selectedProduct.packSize > 0) {
-      const total = qty * selectedProduct.packSize;
-      const unit = selectedProduct.packUnit || selectedProduct.defaultUnit;
-      
-      let displayTotal = total;
-      let displayUnit = unit;
-      if (unit === 'g' && total >= 1000) { displayTotal = total / 1000; displayUnit = 'kg'; }
-      if (unit === 'ml' && total >= 1000) { displayTotal = total / 1000; displayUnit = 'L'; }
+    if (inputMode === 'pack') {
+      if (selectedProduct.packSize > 0) {
+        const total = qty * selectedProduct.packSize;
+        const unit = selectedProduct.packUnit || selectedProduct.defaultUnit;
+        
+        let displayTotal = total;
+        let displayUnit = unit;
+        if (unit === 'g' && total >= 1000) { displayTotal = total / 1000; displayUnit = 'kg'; }
+        if (unit === 'ml' && total >= 1000) { displayTotal = total / 1000; displayUnit = 'L'; }
 
-      return (
-        <View style={styles.calcPreview}>
-          <Text style={styles.calcLabel}>Total Calculado:</Text>
-          <Text style={styles.calcValue}>{displayTotal}{displayUnit}</Text>
-          <Text style={styles.calcSub}>({qty}x {selectedProduct.packSize}{selectedProduct.packUnit})</Text>
-        </View>
-      );
+        return (
+          <View style={styles.calcPreview}>
+            <Text style={styles.calcLabel}>Total Calculado:</Text>
+            <Text style={styles.calcValue}>{displayTotal}{displayUnit}</Text>
+            <Text style={styles.calcSub}>({qty}x {selectedProduct.packSize}{selectedProduct.packUnit})</Text>
+          </View>
+        );
+      } else {
+        return (
+          <View style={styles.calcPreview}>
+            <Text style={styles.calcLabel}>Total:</Text>
+            <Text style={styles.calcValue}>{qty} un</Text>
+          </View>
+        );
+      }
     }
-    return null;
+    
+    return (
+        <View style={styles.calcPreview}>
+          <Text style={styles.calcLabel}>Quantidade Final:</Text>
+          <Text style={styles.calcValue}>{qty} {selectedProduct.defaultUnit || 'un'}</Text>
+        </View>
+    );
   };
-
-  // --- RENDER ---
 
   if (isScanning) {
     if (!permission?.granted) return <View style={styles.center}><TouchableOpacity onPress={requestPermission} style={styles.permBtn}><Text style={{color:'#FFF'}}>Permitir Câmera</Text></TouchableOpacity></View>;
@@ -241,13 +249,13 @@ export default function ShoppingListScreen({ navigation }: any) {
   const checkedCount = items.filter(i => i.isChecked).length;
 
   return (
-    // SafeAreaView como root (sem GestureHandlerRootView redundante)
     <SafeAreaView style={styles.container}>
       <ScreenHeader title="Lista de Compras" subtitle={`${items.length} itens planejados`} />
 
       <FlatList
         data={Object.keys(grouped)}
         keyExtractor={(cat) => cat}
+        style={styles.list}
         contentContainerStyle={{ padding: 20, paddingBottom: 180 }}
         ListHeaderComponent={
           <TouchableOpacity 
@@ -327,7 +335,8 @@ export default function ShoppingListScreen({ navigation }: any) {
                     data={catalog}
                     value={query} 
                     onChangeText={setQuery} 
-                    onSelect={selectProduct} 
+                    onSelect={selectProduct}
+                    closeOnSelect={false}
                   />
                 </View>
                 {!editingItemId && (
@@ -337,7 +346,7 @@ export default function ShoppingListScreen({ navigation }: any) {
                 )}
               </View>
 
-              {/* CARD DE DETALHES DO PRODUTO */}
+              {/* CARD DETALHES DO PRODUTO */}
               {selectedProduct && (
                 <View style={styles.productDetailCard}>
                   <View style={styles.prodHeader}>
@@ -366,11 +375,12 @@ export default function ShoppingListScreen({ navigation }: any) {
                       })()}
                   </View>
 
+                  {/* TAGS DE ALERTAS (Visual Consistente) */}
                   {selectedProduct.allergens ? (
-                      <View style={styles.tagsContainer}>
-                          {selectedProduct.allergens.split(',').map((tag: string, index: number) => (
-                              <View key={index} style={styles.warningBadge}>
-                                  <Text style={styles.warningText}>{tag.trim()}</Text>
+                      <View style={styles.tagsRow}>
+                          {selectedProduct.allergens.split(',').filter((t: string) => t.trim()).map((tag: string, index: number) => (
+                              <View key={index} style={styles.tag}>
+                                  <Text style={styles.tagText}>{tag.trim()}</Text>
                               </View>
                           ))}
                       </View>
@@ -378,8 +388,8 @@ export default function ShoppingListScreen({ navigation }: any) {
                 </View>
               )}
 
-              {/* SELETOR DE MODO (Se tiver packSize) */}
-              {selectedProduct && selectedProduct.packSize > 0 && (
+              {/* TOGGLE SEMPRE VISÍVEL */}
+              {selectedProduct && (
                   <View style={styles.toggleContainer}>
                       <TouchableOpacity 
                       style={[styles.toggleBtn, inputMode === 'pack' && styles.toggleBtnActive]} 
@@ -397,7 +407,7 @@ export default function ShoppingListScreen({ navigation }: any) {
               )}
 
               <Text style={[styles.label, { marginTop: 20 }]}>
-                {inputMode === 'pack' ? "Quantas embalagens comprar?" : `Quantidade total (${selectedProduct?.defaultUnit || 'un'})`}
+                {inputMode === 'pack' ? "Quantas unidades?" : `Quantidade total (${selectedProduct?.defaultUnit || 'un'})`}
               </Text>
               
               <TextInput 
@@ -408,7 +418,6 @@ export default function ShoppingListScreen({ navigation }: any) {
                   placeholder="1"
               />
               
-              {/* PREVIEW DO CÁLCULO */}
               {getCalculationPreview()}
 
               <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
@@ -431,6 +440,7 @@ export default function ShoppingListScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F2F2F7" },
+  list: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   permBtn: { backgroundColor: '#007AFF', padding: 12, borderRadius: 10 },
   cameraContainer: { flex: 1, backgroundColor: '#000' },
@@ -465,8 +475,6 @@ const styles = StyleSheet.create({
   qtyInput: { backgroundColor: '#F2F2F7', padding: 16, borderRadius: 16, fontSize: 18, fontWeight: '600', color: '#1C1C1E' },
   saveBtn: { backgroundColor: '#007AFF', paddingVertical: 18, borderRadius: 18, alignItems: 'center', marginTop: 25, shadowColor: "#007AFF", shadowOpacity: 0.25, shadowRadius: 8 },
   saveText: { color: '#FFF', fontWeight: 'bold', fontSize: 17 },
-  
-  // CARD DE DETALHES DO PRODUTO
   productDetailCard: { backgroundColor: '#F9F9F9', borderRadius: 16, padding: 16, marginTop: 15, borderWidth: 1, borderColor: '#EEE' },
   prodHeader: { marginBottom: 8 },
   prodName: { fontSize: 16, fontWeight: '700', color: '#1C1C1E' },
@@ -474,9 +482,11 @@ const styles = StyleSheet.create({
   prodRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 8 },
   badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EEE', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
   badgeText: { fontSize: 11, fontWeight: '600', color: '#555' },
-  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#EEE' },
-  warningBadge: { backgroundColor: '#FFEBEE', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#FFCDD2' },
-  warningText: { color: '#D32F2F', fontSize: 10, fontWeight: 'bold' },
+  
+  // ESTILOS DAS TAGS (IGUAL AO ESTOQUE)
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 8 },
+  tag: { backgroundColor: '#FF704320', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 0.5, borderColor: '#FF7043' },
+  tagText: { fontSize: 9, color: '#FF7043', fontWeight: '800', textTransform: 'uppercase' },
 
   toggleContainer: { flexDirection: 'row', backgroundColor: '#F2F2F7', borderRadius: 12, padding: 4, marginTop: 20 },
   toggleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },

@@ -1,56 +1,75 @@
-// src/components/ui/ScreenHeader.tsx
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { COLORS, SPACING } from '../../constants/theme';
 
 type Props = {
-  subtitle: string;
   title: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  subtitle?: string;
+  icon?: keyof typeof Ionicons.glyphMap; 
   onIconPress?: () => void;
+  iconColor?: string;
 };
 
-export function ScreenHeader({ subtitle, title, icon = 'person-circle-outline', onIconPress }: Props) {
+export function ScreenHeader({ title, subtitle, icon, onIconPress, iconColor }: Props) {
   return (
     <View style={styles.container}>
-      <View>
-        <Text style={styles.subtitle}>{subtitle}</Text>
+      <View style={styles.topRow}>
         <Text style={styles.title}>{title}</Text>
+        
+        {/* SECÇÃO DIREITA: APENAS O ÍCONE (Se existir) */}
+        {icon && (
+          <View style={styles.rightControls}>
+            <TouchableOpacity 
+              onPress={onIconPress}
+              activeOpacity={0.4}
+              style={styles.iconButton}
+            >
+              <Ionicons 
+                name={icon} 
+                size={22} 
+                color={iconColor || COLORS.text.primary} 
+              />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
-      <TouchableOpacity onPress={onIconPress} style={styles.iconBtn}>
-        <Ionicons name={icon} size={32} color="#007AFF" />
-      </TouchableOpacity>
+
+      {/* SUBTÍTULO ABAIXO DO TÍTULO */}
+      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    padding: 24,
-    paddingBottom: 16,
-    backgroundColor: '#FFF',
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.xl,
+    paddingBottom: SPACING.md,
+    backgroundColor: 'transparent',
+  },
+  topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F2F2F7',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#8E8E93',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    alignItems: 'center', 
+    marginBottom: 4,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1C1C1E',
-    marginTop: 4,
+    fontSize: 28,
+    fontWeight: '600', // Um negrito mais suave e elegante (Minimalista)
+    color: COLORS.text.primary,
+    letterSpacing: -0.5,
   },
-  iconBtn: {
-    padding: 4,
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
-  }
+  rightControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconButton: {
+    padding: 4, // Removemos o fundo, bordas e sombras. Apenas o ícone limpo!
+  },
+  subtitle: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: COLORS.text.secondary,
+  },
 });

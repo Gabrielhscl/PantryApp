@@ -1,4 +1,3 @@
-//
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "../database/db";
@@ -19,12 +18,12 @@ export const ShoppingRepository = {
       unit: data.unit,
       category: data.category || "Outros",
       isChecked: false,
+      price: data.price || 0, // <--- GUARDAR O PREÇO NOVO
       createdAt: now,
       updatedAt: now,
     });
   },
 
-  // --- NOVA FUNÇÃO DE ATUALIZAR ---
   async updateItem(id: string, data: any) {
     return await db
       .update(shoppingListItems)
@@ -33,6 +32,7 @@ export const ShoppingRepository = {
         quantity: data.quantity,
         unit: data.unit,
         category: data.category,
+        price: data.price || 0, // <--- ATUALIZAR O PREÇO AO EDITAR
         updatedAt: new Date(),
       })
       .where(eq(shoppingListItems.id, id));

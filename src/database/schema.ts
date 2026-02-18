@@ -76,6 +76,7 @@ export const shoppingListItems = sqliteTable('shopping_list_items', {
   unit: text('unit').notNull(),
   category: text('category'),
   isChecked: integer('is_checked', { mode: 'boolean' }).default(false),
+  price: real('price').default(0), // <--- ESTE CAMPO É OBRIGATÓRIO AQUI
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
@@ -91,10 +92,13 @@ export const shoppingListTemplates = sqliteTable('shopping_list_templates', {
 
 export const templateItems = sqliteTable('template_items', {
   id: text('id').primaryKey(),
-  templateId: text('template_id').references(() => shoppingListTemplates.id).notNull(),
   productId: text('product_id').references(() => products.id),
   name: text('name').notNull(),
   quantity: real('quantity').notNull(),
   unit: text('unit').notNull(),
   category: text('category'),
+  isChecked: integer('is_checked', { mode: 'boolean' }).default(false),
+  price: real('price').default(0), // <--- NOVO CAMPO
+  createdAt: integer('created_at', { mode: 'timestamp' }),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }),
 });

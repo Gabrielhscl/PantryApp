@@ -2,8 +2,8 @@ import { openDatabaseSync } from "expo-sqlite";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import * as schema from "./schema";
 
-// Subimos para v10 para garantir que o banco tente criar as novas tabelas
-const DATABASE_NAME = "pantry_local_v11.db";
+// MUDÁMOS A VERSÃO PARA v12 PARA APAGAR O BANCO ANTIGO E CRIAR AS NOVAS COLUNAS
+const DATABASE_NAME = "pantry_local_v13.db";
 
 export const expoDb = openDatabaseSync(DATABASE_NAME);
 export const db = drizzle(expoDb, { schema });
@@ -69,7 +69,7 @@ export const initDatabase = async () => {
         is_optional INTEGER DEFAULT 0
       );
 
-      -- --- NOVA TABELA: LISTA DE COMPRAS ---
+      -- --- TABELA ATUALIZADA: AGORA COM A COLUNA 'price' ---
       CREATE TABLE IF NOT EXISTS shopping_list_items (
         id TEXT PRIMARY KEY NOT NULL,
         product_id TEXT REFERENCES products(id),
@@ -78,28 +78,29 @@ export const initDatabase = async () => {
         unit TEXT NOT NULL,
         category TEXT,
         is_checked INTEGER DEFAULT 0,
+        price REAL DEFAULT 0,  -- <--- COLUNA ADICIONADA AQUI!
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS shopping_list_templates (
-      id TEXT PRIMARY KEY NOT NULL,
-      name TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
       );
 
-  CREATE TABLE IF NOT EXISTS template_items (
-    id TEXT PRIMARY KEY NOT NULL,
-    template_id TEXT NOT NULL REFERENCES shopping_list_templates(id) ON DELETE CASCADE,
-    product_id TEXT REFERENCES products(id),
-    name TEXT NOT NULL,
-    quantity REAL NOT NULL,
-    unit TEXT NOT NULL,
-    category TEXT
-    );
-  `);
-    console.log("✅ Banco v11: Pronto com Lista de Compras!");
+      CREATE TABLE IF NOT EXISTS template_items (
+        id TEXT PRIMARY KEY NOT NULL,
+        template_id TEXT NOT NULL REFERENCES shopping_list_templates(id) ON DELETE CASCADE,
+        product_id TEXT REFERENCES products(id),
+        name TEXT NOT NULL,
+        quantity REAL NOT NULL,
+        unit TEXT NOT NULL,
+        category TEXT
+      );
+    `);
+    console.log("✅ Banco v13: Pronto com suporte a preços na Lista de Compras!");
   } catch (error) {
     console.error("❌ Erro ao iniciar banco:", error);
   }

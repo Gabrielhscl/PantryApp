@@ -6,12 +6,9 @@ import {
   FlatList,
   TouchableOpacity,
   TextInput,
-  Modal,
-  Alert,
   Image,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,13 +16,20 @@ import { useFocusEffect } from "@react-navigation/native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-import { ProductRepository } from "../repositories/productRepository";
-import { ProductService } from "../services/productService";
-import { ScreenHeader } from "../components/ui/ScreenHeader";
-import { FloatingButton } from "../components/ui/FloatingButton";
-import { ProductCard } from "../components/ProductCard";
+import { ProductRepository } from "@/repositories/productRepository";
+import { ProductService } from "@/services/productService";
+import { useToast } from "@/contexts/ToastContext";
 
-// --- CONSTANTES ---
+// Componentes UI e Tema
+import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { FloatingButton } from "@/components/ui/FloatingButton";
+import { BottomSheetModal } from "@/components/ui/BottomSheetModal";
+import { CustomInput } from "@/components/ui/CustomInput";
+import { PrimaryButton } from "@/components/ui/PrimaryButton";
+import { ProductCard } from "@/components/ProductCard";
+import { COLORS, SPACING, RADIUS } from "@/constants/theme";
+import { Product } from "@/types";
+
 const CATEGORIES = [
   "Grãos",
   "Massas",
@@ -40,16 +44,12 @@ const CATEGORIES = [
   "Limpeza",
   "Outros",
 ];
-
-// NOVAS UNIDADES PADRÃO
 const UNITS = ["un", "kg", "g", "L", "ml"];
-
 const LOCATIONS = [
   { id: "pantry", label: "Armário", icon: "cube-outline" },
   { id: "fridge", label: "Geladeira", icon: "thermometer-outline" },
   { id: "freezer", label: "Freezer", icon: "snow-outline" },
 ];
-
 const SUGGESTED_TAGS = [
   "Glúten",
   "Leite",
@@ -64,26 +64,23 @@ const SUGGESTED_TAGS = [
 ];
 
 export default function ProductsScreen() {
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [searchText, setSearchText] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
+  const { showToast } = useToast();
 
-  // Scanner
   const [isScanning, setIsScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
-  const [loadingProduct, setLoadingProduct] = useState(false);
 
-  // Formulário Base
+  // Formulário
   const [editingId, setEditingId] = useState<string | null>(null);
   const [barcode, setBarcode] = useState("");
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
   const [category, setCategory] = useState("Outros");
-  const [defaultLocation, setDefaultLocation] = useState("pantry");
-
-  // Tamanho e Imagem
+  const [defaultLocation, setDefaultLocation] = useState<any>("pantry");
   const [packSize, setPackSize] = useState("");
-  const [packUnit, setPackUnit] = useState("un"); // Agora controlado pelos botões
+  const [packUnit, setPackUnit] = useState("un");
   const [image, setImage] = useState<string | null>(null);
 
   // Nutrição
@@ -94,7 +91,6 @@ export default function ProductsScreen() {
   const [fiber, setFiber] = useState("");
   const [sodium, setSodium] = useState("");
 
-  // Tags
   const [alertTags, setAlertTags] = useState<string[]>([]);
   const [currentTagInput, setCurrentTagInput] = useState("");
 
@@ -109,7 +105,6 @@ export default function ProductsScreen() {
     }, []),
   );
 
-  // --- FUNÇÕES DE TAGS ---
   const addTag = (tag: string) => {
     const cleanTag = tag.trim();
     if (cleanTag && !alertTags.includes(cleanTag)) {
@@ -119,23 +114,18 @@ export default function ProductsScreen() {
   };
 
   const removeTag = (tagToRemove: string) =>
-    setAlertTags(alertTags.filter((tag) => tag !== tagToRemove));
-  // -----------------------
+    setAlertTags(alertTags.filter((t) => t !== tagToRemove));
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     setIsScanning(false);
-
     const localProduct = await ProductRepository.findByBarcode(data);
+
     if (localProduct) {
-      Alert.alert(
-        "Já Cadastrado",
-        `O produto "${localProduct.name}" já existe.`,
-      );
+      showToast(`Produto "${localProduct.name}" já registado!`, "warning");
       openEdit(localProduct);
       return;
     }
 
-    setLoadingProduct(true);
     try {
       const info = await ProductService.fetchProductByBarcode(data);
       setBarcode(data);
@@ -144,32 +134,23 @@ export default function ProductsScreen() {
         setName(info.name);
         if (info.brand) setBrand(info.brand);
         if (info.image) setImage(info.image);
-
         if (info.category) {
           const match = CATEGORIES.find((c) => info.category.includes(c));
           setCategory(match || "Outros");
         }
-
         if (info.location) setDefaultLocation(info.location);
         if (info.packSize) setPackSize(String(info.packSize));
-
-        // Normaliza a unidade da API para as nossas
         if (info.packUnit) {
           const apiUnit = info.packUnit.toLowerCase();
-          if (UNITS.includes(apiUnit)) {
-            setPackUnit(apiUnit);
-          } else {
-            setPackUnit("un"); // Fallback
-          }
+          setPackUnit(UNITS.includes(apiUnit) ? apiUnit : "un");
         }
-
-        if (info.allergens) {
-          const tagsFromApi = info.allergens
-            .split(",")
-            .map((t: string) => t.trim())
-            .filter((t: string) => t);
-          setAlertTags(tagsFromApi);
-        }
+        if (info.allergens)
+          setAlertTags(
+            info.allergens
+              .split(",")
+              .map((t: string) => t.trim())
+              .filter(Boolean),
+          );
 
         setCalories(info.calories ? String(info.calories) : "");
         setCarbs(info.carbs ? String(info.carbs) : "");
@@ -178,33 +159,34 @@ export default function ProductsScreen() {
         setFiber(info.fiber ? String(info.fiber) : "");
         setSodium(info.sodium ? String(info.sodium) : "");
 
-        Alert.alert("Encontrado!", `Identificado como: ${info.name}`);
+        showToast("Produto encontrado e preenchido!", "success");
       } else {
-        Alert.alert(
-          "Novo",
-          "Produto não encontrado na base. Preencha manualmente.",
-        );
+        showToast("Produto não encontrado. Preencha manualmente.", "info");
       }
     } catch (error) {
-      Alert.alert("Erro", "Falha ao buscar produto.");
-    } finally {
-      setLoadingProduct(false);
+      showToast("Erro ao pesquisar código de barras.", "error");
     }
   };
 
   const handleSave = async () => {
-    if (!name.trim()) return Alert.alert("Erro", "O nome é obrigatório.");
+    if (!name.trim()) return showToast("O nome é obrigatório.", "error");
 
     try {
+      // 1. Limpa a string do packSize: Troca vírgulas por pontos se existirem
+      const cleanPackSize = packSize ? packSize.replace(",", ".") : "0";
+      // 2. Converte para número
+      const parsedPackSize = parseFloat(cleanPackSize) || 0;
+
       const data = {
         barcode,
         name,
         brand,
         category,
         defaultLocation,
-        packSize: parseFloat(packSize) || 0,
+        // PASSA O NUMERO CORRETO PARA A BASE DE DADOS
+        packSize: parsedPackSize,
         packUnit: packUnit,
-        unit: packUnit, // Garante consistência
+        unit: packUnit,
         image,
         calories: parseFloat(calories) || 0,
         carbs: parseFloat(carbs) || 0,
@@ -217,24 +199,23 @@ export default function ProductsScreen() {
 
       if (editingId) {
         await ProductRepository.updateProduct(editingId, data);
-        Alert.alert("Sucesso", "Produto atualizado!");
+        showToast("Produto atualizado com sucesso!", "success");
       } else {
         await ProductRepository.createProduct(data);
-        Alert.alert("Sucesso", "Produto cadastrado!");
+        showToast("Produto criado com sucesso!", "success");
       }
       setModalVisible(false);
-      resetForm();
       loadProducts();
     } catch (e) {
+      showToast("Falha ao guardar produto.", "error");
       console.log(e);
-      Alert.alert("Erro", "Falha ao salvar produto.");
     }
   };
 
   const handleDelete = (id: string) => {
     Alert.alert(
       "Excluir",
-      "Isso removerá o item do estoque e receitas. Confirmar?",
+      "Remover este item apagará o histórico dele. Confirmar?",
       [
         { text: "Cancelar", style: "cancel" },
         {
@@ -242,11 +223,39 @@ export default function ProductsScreen() {
           style: "destructive",
           onPress: async () => {
             await ProductRepository.deleteProduct(id);
+            showToast("Produto removido.", "info");
             loadProducts();
           },
         },
       ],
     );
+  };
+
+  const openEdit = (item: any) => {
+    setEditingId(item.id);
+    setBarcode(item.barcode || "");
+    setName(item.name);
+    setBrand(item.brand || "");
+    setCategory(item.category || "Outros");
+    setDefaultLocation(item.defaultLocation || "pantry");
+    setPackSize(
+      item.packSize && item.packSize > 0 ? String(item.packSize) : "",
+    );
+    const loadedUnit = item.packUnit || item.defaultUnit || "un";
+    setPackUnit(UNITS.includes(loadedUnit) ? loadedUnit : "un");
+    setImage(item.image);
+    setCalories(item.calories ? String(item.calories) : "");
+    setCarbs(item.carbs ? String(item.carbs) : "");
+    setProtein(item.protein ? String(item.protein) : "");
+    setFat(item.fat ? String(item.fat) : "");
+    setFiber(item.fiber ? String(item.fiber) : "");
+    setSodium(item.sodium ? String(item.sodium) : "");
+    setAlertTags(
+      item.allergens
+        ? item.allergens.split(",").filter((t: string) => t.trim())
+        : [],
+    );
+    setModalVisible(true);
   };
 
   const resetForm = () => {
@@ -269,47 +278,16 @@ export default function ProductsScreen() {
     setCurrentTagInput("");
   };
 
-  const openEdit = (item: any) => {
-    setEditingId(item.id);
-    setBarcode(item.barcode || "");
-    setName(item.name);
-    setBrand(item.brand || "");
-    setCategory(item.category || "Outros");
-    setDefaultLocation(item.defaultLocation || "pantry");
-
-    setPackSize(item.packSize ? String(item.packSize) : "");
-    // Verifica se a unidade salva é válida, senão usa 'un'
-    const loadedUnit = item.packUnit || item.defaultUnit || "un";
-    setPackUnit(UNITS.includes(loadedUnit) ? loadedUnit : "un");
-
-    setImage(item.image);
-    setCalories(item.calories ? String(item.calories) : "");
-    setCarbs(item.carbs ? String(item.carbs) : "");
-    setProtein(item.protein ? String(item.protein) : "");
-    setFat(item.fat ? String(item.fat) : "");
-    setFiber(item.fiber ? String(item.fiber) : "");
-    setSodium(item.sodium ? String(item.sodium) : "");
-
-    if (item.allergens) {
-      setAlertTags(item.allergens.split(",").filter((t: string) => t.trim()));
-    } else {
-      setAlertTags([]);
-    }
-
-    setModalVisible(true);
-  };
-
   if (isScanning) {
-    if (!permission?.granted) {
+    if (!permission?.granted)
       return (
         <View style={styles.center}>
-          <Text>Precisamos da câmera</Text>
+          <Text>Sem acesso à câmara</Text>
           <TouchableOpacity onPress={requestPermission}>
-            <Text style={{ color: "blue" }}>Permitir</Text>
+            <Text style={{ color: COLORS.primary }}>Permitir</Text>
           </TouchableOpacity>
         </View>
       );
-    }
     return (
       <View style={styles.cameraContainer}>
         <CameraView
@@ -335,13 +313,13 @@ export default function ProductsScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={styles.container}>
-        <ScreenHeader title="Catálogo" subtitle="Base de Produtos" />
+        <ScreenHeader title="Catálogo" subtitle="A sua base de dados" />
 
         <View style={styles.searchBox}>
-          <Ionicons name="search" size={20} color="#666" />
+          <Ionicons name="search" size={20} color={COLORS.text.secondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar..."
+            placeholder="Procurar produto..."
             value={searchText}
             onChangeText={setSearchText}
           />
@@ -350,7 +328,7 @@ export default function ProductsScreen() {
         <FlatList
           data={filteredProducts}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
+          contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 100 }}
           renderItem={({ item }) => (
             <ProductCard
               data={item}
@@ -367,544 +345,405 @@ export default function ProductsScreen() {
           }}
         />
 
-        <Modal
+        <BottomSheetModal
           visible={modalVisible}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setModalVisible(false)}
+          onClose={() => setModalVisible(false)}
+          title={editingId ? "Editar" : "Novo Produto"}
         >
-          <View style={styles.modalOverlay}>
-            <TouchableOpacity
-              style={styles.modalBackdrop}
-              onPress={() => setModalVisible(false)}
-            />
+          <View style={styles.imageSection}>
+            <TouchableOpacity onPress={() => setIsScanning(true)}>
+              {image ? (
+                <Image source={{ uri: image }} style={styles.proImage} />
+              ) : (
+                <View style={styles.proImagePlaceholder}>
+                  <Ionicons
+                    name="barcode-outline"
+                    size={32}
+                    color={COLORS.primary}
+                  />
+                  <Text style={styles.photoText}>Escanear</Text>
+                </View>
+              )}
+              {barcode ? (
+                <Text style={styles.barcodeText}>{barcode}</Text>
+              ) : null}
+            </TouchableOpacity>
+          </View>
 
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>
-                  {editingId ? "Editar" : "Novo Produto"}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setModalVisible(false)}
-                  style={styles.closeBtn}
-                >
-                  <Ionicons name="close" size={24} color="#333" />
-                </TouchableOpacity>
-              </View>
+          <CustomInput
+            label="Nome do Produto"
+            value={name}
+            onChangeText={setName}
+          />
+          <CustomInput
+            label="Marca (Opcional)"
+            value={brand}
+            onChangeText={setBrand}
+          />
 
-              <KeyboardAvoidingView
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                style={{ flex: 1 }}
+          <Text style={styles.label}>Categoria</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginBottom: SPACING.lg }}
+          >
+            {CATEGORIES.map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  styles.catChip,
+                  category === cat && styles.catChipActive,
+                ]}
+                onPress={() => setCategory(cat)}
               >
-                <ScrollView
-                  style={styles.modalBody}
-                  showsVerticalScrollIndicator={false}
+                <Text
+                  style={[
+                    styles.catText,
+                    category === cat && styles.catTextActive,
+                  ]}
                 >
-                  {/* FOTO */}
-                  <View style={styles.imageSection}>
-                    <TouchableOpacity onPress={() => setIsScanning(true)}>
-                      {image ? (
-                        <Image
-                          source={{ uri: image }}
-                          style={styles.proImage}
-                        />
-                      ) : (
-                        <View style={styles.proImagePlaceholder}>
-                          <Ionicons
-                            name="camera-outline"
-                            size={32}
-                            color="#007AFF"
-                          />
-                          <Text style={styles.photoText}>Escanear</Text>
-                        </View>
-                      )}
-                      {barcode ? (
-                        <Text style={styles.barcodeText}>{barcode}</Text>
-                      ) : null}
-                    </TouchableOpacity>
-                  </View>
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
 
-                  {/* DADOS GERAIS */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Nome do Produto</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={name}
-                      onChangeText={setName}
-                    />
-                  </View>
-
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Marca</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={brand}
-                      onChangeText={setBrand}
-                    />
-                  </View>
-
-                  {/* CATEGORIAS */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Categoria</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={{ flexDirection: "row" }}
-                    >
-                      {CATEGORIES.map((cat) => (
-                        <TouchableOpacity
-                          key={cat}
-                          style={[
-                            styles.catChip,
-                            category === cat && styles.catChipActive,
-                          ]}
-                          onPress={() => setCategory(cat)}
-                        >
-                          <Text
-                            style={[
-                              styles.catText,
-                              category === cat && styles.catTextActive,
-                            ]}
-                          >
-                            {cat}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-
-                  {/* LOCAL & TAMANHO & UNIDADE */}
-                  <View
-                    style={{ flexDirection: "row", gap: 15, marginBottom: 16 }}
+          <View
+            style={{
+              flexDirection: "row",
+              gap: SPACING.md,
+              marginBottom: SPACING.lg,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Guardar no</Text>
+              <View style={{ flexDirection: "row", gap: 5 }}>
+                {LOCATIONS.map((loc) => (
+                  <TouchableOpacity
+                    key={loc.id}
+                    style={[
+                      styles.miniLocBtn,
+                      defaultLocation === loc.id && styles.miniLocBtnActive,
+                    ]}
+                    onPress={() => setDefaultLocation(loc.id)}
                   >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Local Padrão</Text>
-                      <View style={{ flexDirection: "row", gap: 5 }}>
-                        {LOCATIONS.map((loc) => (
-                          <TouchableOpacity
-                            key={loc.id}
-                            style={[
-                              styles.miniLocBtn,
-                              defaultLocation === loc.id &&
-                                styles.miniLocBtnActive,
-                            ]}
-                            onPress={() => setDefaultLocation(loc.id)}
-                          >
-                            <Ionicons
-                              name={loc.icon as any}
-                              size={16}
-                              color={
-                                defaultLocation === loc.id ? "#FFF" : "#666"
-                              }
-                            />
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Peso/Volume</Text>
-                      <TextInput
-                        style={[
-                          styles.input,
-                          { padding: 8, height: 40, textAlign: "center" },
-                        ]}
-                        value={packSize}
-                        onChangeText={setPackSize}
-                        placeholder="395"
-                        keyboardType="numeric"
-                      />
-                    </View>
-                  </View>
-
-                  {/* --- SELETOR DE UNIDADES PADRONIZADO --- */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Unidade</Text>
-                    <View
-                      style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}
-                    >
-                      {UNITS.map((u) => (
-                        <TouchableOpacity
-                          key={u}
-                          style={[
-                            styles.unitChip,
-                            packUnit === u && styles.unitChipActive,
-                          ]}
-                          onPress={() => setPackUnit(u)}
-                        >
-                          <Text
-                            style={[
-                              styles.unitText,
-                              packUnit === u && styles.unitTextActive,
-                            ]}
-                          >
-                            {u}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-
-                  {/* ALERTAS */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Alertas & Etiquetas</Text>
-                    <View style={styles.tagInputRow}>
-                      <TextInput
-                        style={[styles.input, { flex: 1 }]}
-                        value={currentTagInput}
-                        onChangeText={setCurrentTagInput}
-                        placeholder="Ex: Sem Glúten..."
-                        onSubmitEditing={() => addTag(currentTagInput)}
-                      />
-                      <TouchableOpacity
-                        style={styles.addTagBtn}
-                        onPress={() => addTag(currentTagInput)}
-                      >
-                        <Ionicons name="add" size={24} color="white" />
-                      </TouchableOpacity>
-                    </View>
-
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={{ marginBottom: 10 }}
-                    >
-                      {SUGGESTED_TAGS.map((tag) => (
-                        <TouchableOpacity
-                          key={tag}
-                          style={styles.suggestionChip}
-                          onPress={() => addTag(tag)}
-                        >
-                          <Text style={styles.suggestionText}>+ {tag}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-
-                    <View style={styles.tagsContainer}>
-                      {alertTags.length === 0 && (
-                        <Text style={styles.emptyTagsText}>
-                          Nenhuma etiqueta adicionada
-                        </Text>
-                      )}
-                      {alertTags.map((tag, index) => (
-                        <View key={index} style={styles.activeTag}>
-                          <Text style={styles.activeTagText}>{tag}</Text>
-                          <TouchableOpacity onPress={() => removeTag(tag)}>
-                            <Ionicons
-                              name="close-circle"
-                              size={18}
-                              color="white"
-                              style={{ marginLeft: 4 }}
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-
-                  {/* NUTRIÇÃO */}
-                  <View style={styles.divider} />
-                  <Text style={styles.sectionTitle}>
-                    Nutrição (por 100g/ml)
-                  </Text>
-
-                  <View style={styles.row3}>
-                    <View style={styles.col}>
-                      <Text style={styles.miniLabel}>Kcal</Text>
-                      <TextInput
-                        style={styles.inputSmall}
-                        value={calories}
-                        onChangeText={setCalories}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                    <View style={styles.col}>
-                      <Text style={styles.miniLabel}>Carb.</Text>
-                      <TextInput
-                        style={styles.inputSmall}
-                        value={carbs}
-                        onChangeText={setCarbs}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                    <View style={styles.col}>
-                      <Text style={styles.miniLabel}>Prot.</Text>
-                      <TextInput
-                        style={styles.inputSmall}
-                        value={protein}
-                        onChangeText={setProtein}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                  </View>
-                  <View style={styles.row3}>
-                    <View style={styles.col}>
-                      <Text style={styles.miniLabel}>Gord.</Text>
-                      <TextInput
-                        style={styles.inputSmall}
-                        value={fat}
-                        onChangeText={setFat}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                    <View style={styles.col}>
-                      <Text style={styles.miniLabel}>Fibra</Text>
-                      <TextInput
-                        style={styles.inputSmall}
-                        value={fiber}
-                        onChangeText={setFiber}
-                        keyboardType="numeric"
-                      />
-                    </View>
-                    <View style={styles.col}>
-                      <Text style={styles.miniLabel}>Sódio</Text>
-                      <TextInput
-                        style={styles.inputSmall}
-                        value={sodium}
-                        onChangeText={setSodium}
-                        keyboardType="numeric"
-                        placeholder="mg"
-                      />
-                    </View>
-                  </View>
-
-                  <View style={{ height: 60 }} />
-                </ScrollView>
-              </KeyboardAvoidingView>
-
-              <View style={styles.modalFooter}>
-                <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-                  <Text style={styles.saveText}>Salvar Produto</Text>
-                </TouchableOpacity>
+                    <Ionicons
+                      name={loc.icon as any}
+                      size={16}
+                      color={
+                        defaultLocation === loc.id
+                          ? COLORS.text.light
+                          : COLORS.text.secondary
+                      }
+                    />
+                  </TouchableOpacity>
+                ))}
               </View>
             </View>
+            <View style={{ flex: 1 }}>
+              <CustomInput
+                label="Peso/Vol (Nº)"
+                value={packSize}
+                onChangeText={setPackSize}
+                keyboardType="numeric"
+                placeholder="395"
+                style={{ height: 45, marginBottom: 0 }}
+              />
+            </View>
           </View>
-        </Modal>
+
+          <Text style={styles.label}>Unidade</Text>
+          <View
+            style={{
+              flexDirection: "row",
+              gap: 8,
+              flexWrap: "wrap",
+              marginBottom: SPACING.lg,
+            }}
+          >
+            {UNITS.map((u) => (
+              <TouchableOpacity
+                key={u}
+                style={[
+                  styles.unitChip,
+                  packUnit === u && styles.unitChipActive,
+                ]}
+                onPress={() => setPackUnit(u)}
+              >
+                <Text
+                  style={[
+                    styles.unitText,
+                    packUnit === u && styles.unitTextActive,
+                  ]}
+                >
+                  {u}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.label}>Alertas & Etiquetas</Text>
+          <View style={styles.tagInputRow}>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              value={currentTagInput}
+              onChangeText={setCurrentTagInput}
+              placeholder="Ex: Sem Glúten..."
+              onSubmitEditing={() => addTag(currentTagInput)}
+            />
+            <TouchableOpacity
+              style={styles.addTagBtn}
+              onPress={() => addTag(currentTagInput)}
+            >
+              <Ionicons name="add" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginBottom: 10 }}
+          >
+            {SUGGESTED_TAGS.map((tag) => (
+              <TouchableOpacity
+                key={tag}
+                style={styles.suggestionChip}
+                onPress={() => addTag(tag)}
+              >
+                <Text style={styles.suggestionText}>+ {tag}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={styles.tagsContainer}>
+            {alertTags.map((tag, index) => (
+              <View key={index} style={styles.activeTag}>
+                <Text style={styles.activeTagText}>{tag}</Text>
+                <TouchableOpacity onPress={() => removeTag(tag)}>
+                  <Ionicons
+                    name="close-circle"
+                    size={18}
+                    color="white"
+                    style={{ marginLeft: 4 }}
+                  />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.divider} />
+          <Text style={styles.sectionTitle}>Nutrição (por 100g/ml)</Text>
+
+          <View style={styles.row3}>
+            <View style={styles.col}>
+              <Text style={styles.miniLabel}>Kcal</Text>
+              <TextInput
+                style={styles.inputSmall}
+                value={calories}
+                onChangeText={setCalories}
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={styles.col}>
+              <Text style={styles.miniLabel}>Carb.</Text>
+              <TextInput
+                style={styles.inputSmall}
+                value={carbs}
+                onChangeText={setCarbs}
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={styles.col}>
+              <Text style={styles.miniLabel}>Prot.</Text>
+              <TextInput
+                style={styles.inputSmall}
+                value={protein}
+                onChangeText={setProtein}
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+
+          <PrimaryButton
+            title={editingId ? "Guardar Produto" : "Criar Produto"}
+            onPress={handleSave}
+            containerStyle={{ marginTop: SPACING.xl }}
+          />
+        </BottomSheetModal>
       </SafeAreaView>
     </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f2f2f7" },
+  container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   searchBox: {
     flexDirection: "row",
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
+    backgroundColor: COLORS.card,
+    marginHorizontal: SPACING.md,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#e5e5ea",
+    borderColor: COLORS.border,
   },
-  searchInput: { flex: 1, marginLeft: 10, fontSize: 16, color: "#333" },
-
-  modalOverlay: {
+  searchInput: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "flex-end",
+    marginLeft: 10,
+    fontSize: 16,
+    color: COLORS.text.primary,
   },
-  modalBackdrop: { flex: 1 },
-  modalContent: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    height: "90%",
-    paddingBottom: 30,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
-  },
-  modalTitle: { fontSize: 20, fontWeight: "bold" },
-  closeBtn: { padding: 5, backgroundColor: "#f2f2f7", borderRadius: 20 },
-  modalBody: { flex: 1, padding: 20 },
 
-  imageSection: { alignItems: "center", marginBottom: 20 },
+  label: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORS.text.secondary,
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  input: {
+    backgroundColor: COLORS.input,
+    padding: 14,
+    borderRadius: RADIUS.md,
+    fontSize: 16,
+  },
+
+  imageSection: { alignItems: "center", marginBottom: SPACING.lg },
   proImage: {
     width: 100,
     height: 100,
     borderRadius: 30,
     resizeMode: "cover",
     borderWidth: 3,
-    borderColor: "#fff",
-    backgroundColor: "#f0f0f0",
+    borderColor: COLORS.card,
   },
   proImagePlaceholder: {
     width: 100,
     height: 100,
     borderRadius: 30,
-    backgroundColor: "#f0f4f8",
+    backgroundColor: COLORS.input,
     justifyContent: "center",
     alignItems: "center",
     borderStyle: "dashed",
     borderWidth: 2,
-    borderColor: "#d1d5db",
+    borderColor: COLORS.border,
   },
   photoText: {
     fontSize: 10,
-    color: "#007AFF",
+    color: COLORS.primary,
     fontWeight: "bold",
-    marginTop: 5,
+    marginTop: 4,
   },
   barcodeText: {
-    fontSize: 10,
-    color: "#666",
-    marginTop: 5,
-    textAlign: "center",
+    marginTop: 8,
+    fontSize: 12,
+    color: COLORS.text.secondary,
+    letterSpacing: 1,
   },
 
-  inputGroup: { marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: "600", color: "#666", marginBottom: 6 },
-  input: {
-    backgroundColor: "#fbfbfb",
-    borderWidth: 1,
-    borderColor: "#e5e5ea",
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 16,
-  },
-
-  // Chips de Categoria
   catChip: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#F2F2F7",
+    borderRadius: RADIUS.xl,
+    backgroundColor: COLORS.input,
     marginRight: 8,
-    borderWidth: 1,
-    borderColor: "#E5E5EA",
   },
-  catChipActive: { backgroundColor: "#007AFF", borderColor: "#007AFF" },
-  catText: { fontSize: 13, color: "#666", fontWeight: "600" },
-  catTextActive: { color: "#FFF" },
-
-  // Chips de Unidade (NOVO)
-  unitChip: {
-    width: 50,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
-    backgroundColor: "#F2F2F7",
-    borderWidth: 1,
-    borderColor: "#E5E5EA",
-  },
-  unitChipActive: { backgroundColor: "#007AFF", borderColor: "#007AFF" },
-  unitText: { fontSize: 14, fontWeight: "bold", color: "#666" },
-  unitTextActive: { color: "#FFF" },
+  catChipActive: { backgroundColor: COLORS.primary },
+  catText: { color: COLORS.text.secondary, fontWeight: "600", fontSize: 13 },
+  catTextActive: { color: COLORS.text.light },
 
   miniLocBtn: {
     flex: 1,
+    paddingVertical: 10,
+    backgroundColor: COLORS.input,
+    borderRadius: RADIUS.sm,
     alignItems: "center",
-    justifyContent: "center",
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: "#F2F2F7",
-    borderWidth: 1,
-    borderColor: "#E5E5EA",
   },
-  miniLocBtnActive: { backgroundColor: "#007AFF", borderColor: "#007AFF" },
+  miniLocBtnActive: { backgroundColor: COLORS.primary },
 
-  tagInputRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  unitChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.input,
+  },
+  unitChipActive: { backgroundColor: COLORS.primary },
+  unitText: { color: COLORS.text.secondary, fontWeight: "bold" },
+  unitTextActive: { color: COLORS.text.light },
+
+  tagInputRow: { flexDirection: "row", gap: 10, marginBottom: 10 },
   addTagBtn: {
-    backgroundColor: "#007AFF",
+    backgroundColor: COLORS.status.warning,
+    borderRadius: RADIUS.md,
     width: 50,
-    height: 50,
-    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    marginLeft: 10,
   },
   suggestionChip: {
-    backgroundColor: "#f0f4f8",
+    backgroundColor: COLORS.input,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: RADIUS.sm,
     marginRight: 8,
-    borderWidth: 1,
-    borderColor: "#e1e4e8",
   },
-  suggestionText: { color: "#555", fontSize: 12, fontWeight: "600" },
-  tagsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#f0f0f0",
-    minHeight: 50,
+  suggestionText: {
+    color: COLORS.text.secondary,
+    fontSize: 12,
+    fontWeight: "bold",
   },
+  tagsContainer: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   activeTag: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ff7043",
+    backgroundColor: "#FF7043",
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: RADIUS.sm,
   },
   activeTagText: { color: "white", fontWeight: "bold", fontSize: 12 },
-  emptyTagsText: {
-    color: "#ccc",
-    fontSize: 12,
-    fontStyle: "italic",
-    width: "100%",
-    textAlign: "center",
-    marginTop: 5,
+
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: SPACING.lg,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: COLORS.text.primary,
+    marginBottom: SPACING.md,
   },
 
-  divider: { height: 1, backgroundColor: "#E5E5EA", marginVertical: 15 },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#007AFF",
-    marginBottom: 10,
-  },
   row3: { flexDirection: "row", gap: 10, marginBottom: 10 },
   col: { flex: 1 },
   miniLabel: {
     fontSize: 11,
-    color: "#8E8E93",
+    fontWeight: "bold",
+    color: COLORS.text.secondary,
     marginBottom: 4,
     textAlign: "center",
   },
   inputSmall: {
-    backgroundColor: "#fbfbfb",
-    borderWidth: 1,
-    borderColor: "#e5e5ea",
-    borderRadius: 8,
-    padding: 8,
-    fontSize: 14,
+    backgroundColor: COLORS.input,
+    padding: 10,
+    borderRadius: RADIUS.sm,
     textAlign: "center",
+    fontSize: 14,
+    fontWeight: "600",
   },
-
-  modalFooter: { padding: 20, borderTopWidth: 1, borderTopColor: "#f0f0f0" },
-  saveBtn: {
-    backgroundColor: "#007AFF",
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: "center",
-  },
-  saveText: { color: "white", fontSize: 18, fontWeight: "bold" },
 
   cameraContainer: { flex: 1, backgroundColor: "black" },
   cameraOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
+    backgroundColor: "transparent",
     justifyContent: "flex-end",
-    paddingBottom: 50,
-    alignItems: "center",
+    padding: 40,
   },
   closeCameraButton: {
-    backgroundColor: "rgba(255, 0, 0, 0.8)",
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 25,
+    backgroundColor: COLORS.status.danger,
+    padding: 15,
+    borderRadius: RADIUS.md,
+    alignItems: "center",
   },
 });

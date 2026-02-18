@@ -24,8 +24,8 @@ export default function RecipesScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [detailVisible, setDetailVisible] = useState(false);
 
-  const [selectedRecipe, setSelectedRecipe] = useState<any>(null); // Para ver detalhes
-  const [editingRecipe, setEditingRecipe] = useState<any>(null); // Para editar
+  const [selectedRecipe, setSelectedRecipe] = useState<any>(null);
+  const [editingRecipe, setEditingRecipe] = useState<any>(null);
 
   const [alertConfig, setAlertConfig] = useState<any>({ visible: false });
 
@@ -44,24 +44,20 @@ export default function RecipesScreen() {
     }, []),
   );
 
-  // --- ABRIR MODAL PARA CRIAR ---
   const handleCreate = () => {
-    setEditingRecipe(null); // Garante que está vazio
+    setEditingRecipe(null);
     setModalVisible(true);
   };
 
-  // --- ABRIR MODAL PARA EDITAR ---
   const handleEdit = (recipe: any) => {
-    setEditingRecipe(recipe); // Preenche com dados
+    setEditingRecipe(recipe);
     setModalVisible(true);
   };
 
   const handleSave = async (data: any) => {
     if (editingRecipe) {
-      // ATUALIZAR
       await RecipeRepository.updateRecipe(editingRecipe.id, data);
     } else {
-      // CRIAR NOVO
       await RecipeRepository.createRecipe(data);
     }
     loadData();
@@ -115,7 +111,7 @@ export default function RecipesScreen() {
                   setSelectedRecipe(item);
                   setDetailVisible(true);
                 }}
-                onEdit={() => handleEdit(item)} // <-- CONECTADO AGORA!
+                onEdit={() => handleEdit(item)}
                 onDelete={() => handleDelete(item.id)}
               />
             );
@@ -132,20 +128,19 @@ export default function RecipesScreen() {
 
         <FloatingButton onPress={handleCreate} />
 
-        {/* MODAL DE CRIAÇÃO/EDIÇÃO */}
         <AddRecipeModal
           visible={modalVisible}
           onClose={() => setModalVisible(false)}
           onSave={handleSave}
-          recipeToEdit={editingRecipe} // Passa a receita para o modal
+          recipeToEdit={editingRecipe}
         />
 
-        {/* MODAL DE DETALHES */}
         <RecipeDetailsModal
           visible={detailVisible}
           onClose={() => setDetailVisible(false)}
           recipe={selectedRecipe}
           inventory={inventory}
+          onCooked={loadData} // <--- QUANDO COZINHAR, ATUALIZA A TELA INTEIRA!
         />
 
         <AlertModal

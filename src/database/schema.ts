@@ -90,15 +90,16 @@ export const shoppingListTemplates = sqliteTable('shopping_list_templates', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
 
-export const templateItems = sqliteTable('template_items', {
+export const templateItems = sqliteTable('template_items_v2', {
   id: text('id').primaryKey(),
   productId: text('product_id').references(() => products.id),
   name: text('name').notNull(),
   quantity: real('quantity').notNull(),
   unit: text('unit').notNull(),
-  category: text('category'),
+  category: text('category').default("Outros"),
   isChecked: integer('is_checked', { mode: 'boolean' }).default(false),
   price: real('price').default(0), // <--- NOVO CAMPO
   createdAt: integer('created_at', { mode: 'timestamp' }),
   updatedAt: integer('updated_at', { mode: 'timestamp' }),
+  templateId: text("template_id").notNull().references(() => shoppingListTemplates.id, { onDelete: 'cascade' }), // <-- AQUI PODE SER O ERRO
 });

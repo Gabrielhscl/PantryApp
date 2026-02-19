@@ -12,12 +12,15 @@ import InventoryScreen from "./src/screens/InventoryScreen";
 import RecipesScreen from "./src/screens/RecipesScreen";
 import ShoppingListScreen from "./src/screens/ShoppingListScreen";
 import ProductsScreen from "./src/screens/ProductsScreen";
+
+// Importa os nossos Ecrãs Modernos
 import TemplatesScreen from "./src/screens/TemplatesScreen";
 import TemplateDetailScreen from "./src/screens/TemplateDetailScreen";
+import ImportNfceScreen from "./src/screens/ImportNfceScreen";
+
 import { initDatabase } from "./src/database/db";
-import { ToastProvider } from "./src/contexts/ToastContext"; // <--- NOVO
-import { COLORS } from "./src/constants/theme"; // <--- NOVO
-import ImportNfceScreen from "@/screens/ImportNfceScreen";
+import { ToastProvider } from "./src/contexts/ToastContext";
+import { COLORS } from "./src/constants/theme";
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -27,7 +30,7 @@ function MainTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: COLORS.primary, // Usando Tema
+        tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.text.secondary,
         tabBarStyle: {
           paddingBottom: 5,
@@ -82,23 +85,35 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ToastProvider>
         <NavigationContainer>
-          <StatusBar style="auto" />
+          {/* FORÇA A BARRA DE ESTADO DO TELEMÓVEL A FICAR PRETA POR CIMA DO ECRÃ BRANCO/CINZA */}
+          <StatusBar
+            style="dark"
+            backgroundColor="transparent"
+            translucent={true}
+          />
+
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Main" component={MainTabs} />
+
+            {/* ECRÃ DE LISTAS FIXAS PRINCIPAL */}
             <Stack.Screen
               name="Templates"
               component={TemplatesScreen}
-              options={{ headerShown: true, title: "Meus Modelos" }}
+              // headerShown: false para usarmos o nosso lindo ScreenHeader
             />
+
+            {/* ECRÃ DE DENTRO DA LISTA FIXA */}
             <Stack.Screen
-              name="TemplateDetail"
+              name="TemplateDetails"
               component={TemplateDetailScreen}
-              options={{ headerShown: true, title: "Detalhes do Modelo" }}
+              options={{ headerShown: false }}
             />
+
+            {/* ECRÃ DE LEITURA DE NOTA FISCAL (NFCe) */}
             <Stack.Screen
               name="ImportNfce"
               component={ImportNfceScreen}
-              options={{ headerShown: false, presentation: "modal" }} // Fica bonito abrindo de baixo pra cima
+              options={{ presentation: "modal" }} // Fica bonito abrindo de baixo pra cima
             />
           </Stack.Navigator>
         </NavigationContainer>

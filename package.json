@@ -11,11 +11,13 @@
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.3",
+    "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-picker/picker": "2.11.1",
     "@react-navigation/bottom-tabs": "^7.13.0",
     "@react-navigation/native": "^7.1.28",
     "@react-navigation/native-stack": "^7.12.0",
+    "@supabase/supabase-js": "^2.97.0",
     "drizzle-orm": "^0.45.1",
     "expo": "~54.0.33",
     "expo-camera": "~17.0.10",
@@ -32,6 +34,7 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-web": "^0.21.0",
+    "url-polyfill": "^1.1.14",
     "uuid": "^13.0.0",
     "zustand": "^5.0.11"
   },

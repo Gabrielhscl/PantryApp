@@ -104,7 +104,7 @@ export default function App() {
 
             {/* ECRÃ DE DENTRO DA LISTA FIXA */}
             <Stack.Screen
-              name="TemplateDetails"
+              name="TemplateDetail" // Atualizado para o nome correto
               component={TemplateDetailScreen}
               options={{ headerShown: false }}
             />

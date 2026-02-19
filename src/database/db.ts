@@ -2,8 +2,7 @@ import { openDatabaseSync } from "expo-sqlite";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import * as schema from "./schema";
 
-// MUDÁMOS A VERSÃO PARA v12 PARA APAGAR O BANCO ANTIGO E CRIAR AS NOVAS COLUNAS
-const DATABASE_NAME = "pantry_local_v13.db";
+const DATABASE_NAME = "pantry_local_v15.db"; // <--- MUDE PARA V15 PARA FORÇAR LIMPEZA DE ERROS!
 
 export const expoDb = openDatabaseSync(DATABASE_NAME);
 export const db = drizzle(expoDb, { schema });
@@ -69,7 +68,6 @@ export const initDatabase = async () => {
         is_optional INTEGER DEFAULT 0
       );
 
-      -- --- TABELA ATUALIZADA: AGORA COM A COLUNA 'price' ---
       CREATE TABLE IF NOT EXISTS shopping_list_items (
         id TEXT PRIMARY KEY NOT NULL,
         product_id TEXT REFERENCES products(id),
@@ -78,7 +76,7 @@ export const initDatabase = async () => {
         unit TEXT NOT NULL,
         category TEXT,
         is_checked INTEGER DEFAULT 0,
-        price REAL DEFAULT 0,  -- <--- COLUNA ADICIONADA AQUI!
+        price REAL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -90,17 +88,22 @@ export const initDatabase = async () => {
         updated_at INTEGER NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS template_items (
+      -- --- TABELA DE ITENS DE LISTA FIXA V2 (SINCRONIZADA COM O SCHEMA.TS) ---
+      CREATE TABLE IF NOT EXISTS template_items_v2 (
         id TEXT PRIMARY KEY NOT NULL,
         template_id TEXT NOT NULL REFERENCES shopping_list_templates(id) ON DELETE CASCADE,
         product_id TEXT REFERENCES products(id),
         name TEXT NOT NULL,
         quantity REAL NOT NULL,
         unit TEXT NOT NULL,
-        category TEXT
+        category TEXT DEFAULT 'Outros',
+        is_checked INTEGER DEFAULT 0,
+        price REAL DEFAULT 0,
+        created_at INTEGER,
+        updated_at INTEGER
       );
     `);
-    console.log("✅ Banco v13: Pronto com suporte a preços na Lista de Compras!");
+    console.log("✅ Banco v15: Pronto com suporte total a Listas Fixas!");
   } catch (error) {
     console.error("❌ Erro ao iniciar banco:", error);
   }

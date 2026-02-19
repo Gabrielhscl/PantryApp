@@ -103,7 +103,6 @@ export function RecipeDetailsModal({ visible, onClose, recipe, inventory, onCook
 
   const hasMissingItems = missingIngredients.length > 0;
 
-  // --- FUNÇÃO ATUALIZADA: AGORA COM A CATEGORIA SENDO O NOME DA RECEITA ---
   const handleGenerateShoppingList = async () => {
     try {
       let itemsAdded = 0;
@@ -117,7 +116,6 @@ export function RecipeDetailsModal({ visible, onClose, recipe, inventory, onCook
         }
 
         if (qtyToBuy > 0) {
-          // TRUQUE: Juntamos a categoria original e o nome da receita
           const originalCategory = ing.category || "Outros";
           const compoundCategory = `${originalCategory}|${recipe.name}`;
 
@@ -126,7 +124,7 @@ export function RecipeDetailsModal({ visible, onClose, recipe, inventory, onCook
             name: ing.name,
             quantity: Number(qtyToBuy.toFixed(2)),
             unit: ing.unit,
-            category: compoundCategory // Guarda "Carnes|Lasanha"
+            category: compoundCategory 
           });
           itemsAdded++;
         }
@@ -189,6 +187,15 @@ export function RecipeDetailsModal({ visible, onClose, recipe, inventory, onCook
   };
 
   const steps = recipe.instructions ? recipe.instructions.split("\n").filter((s: string) => s.trim()) : [];
+
+  // --- FUNÇÃO PARA FORMATAR AS UNIDADES VISUALMENTE ---
+  const formatQty = (qty: number, unit: string) => {
+    let dQty = qty; 
+    let dUnit = unit.toLowerCase();
+    if (dUnit === 'g' && qty >= 1000) { dQty = qty / 1000; dUnit = 'kg'; }
+    if (dUnit === 'ml' && qty >= 1000) { dQty = qty / 1000; dUnit = 'L'; }
+    return `${Number.isInteger(dQty) ? dQty : dQty.toFixed(2)}${dUnit}`;
+  };
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -264,24 +271,61 @@ export function RecipeDetailsModal({ visible, onClose, recipe, inventory, onCook
                 Object.keys(groupedIngredients).map((category) => (
                   <View key={category}>
                     <Text style={styles.catHeader}>{category}</Text>
+                    
                     {groupedIngredients[category].map((ing: any, i: number) => {
                       const status = getIngredientStatus(ing);
-                      const formattedQty = Number.isInteger(status.required) ? status.required : status.required.toFixed(1);
+                      const reqQty = status.required;
                       
+                      let stockQty = 0;
+                      let missingQty = reqQty;
+
+                      // Só faz o cálculo de diferença se a unidade for igual, 
+                      // para não misturar coisas complexas (ex: abater ml em unidades)
+                      if (status.current > 0 && status.unit === ing.unit) {
+                        stockQty = status.current;
+                        missingQty = Math.max(0, reqQty - stockQty);
+                      } else if (status.current > 0) {
+                        // Se as unidades forem diferentes mas existe stock, marcamos como se o sistema
+                        // tivesse de comprar a quantidade pedida (para simplificar a visualização)
+                        stockQty = 0;
+                        missingQty = reqQty;
+                      }
+
+                      const hasEnough = status.has;
+                      const hasSome = stockQty > 0 && !hasEnough;
+
                       return (
-                        <View key={i} style={styles.ingRow}>
-                          <Ionicons 
-                            name={status.has ? "checkmark-circle" : "close-circle"} 
-                            size={18} 
-                            color={status.has ? COLORS.status.success : COLORS.status.danger} 
-                          />
-                          <Text style={[styles.ingName, !status.has && { color: COLORS.status.danger }]} numberOfLines={1}>
-                            {ing.name}
-                          </Text>
-                          <Text style={styles.ingQty}>
-                            {formattedQty}{ing.unit}
-                            {status.approx && <Text style={styles.approxText}> {status.approx}</Text>}
-                          </Text>
+                        <View key={i} style={styles.ingredientRow}>
+                          <View style={styles.ingredientInfo}>
+                            <Text style={styles.ingredientName}>{ing.name}</Text>
+                            <Text style={styles.ingredientReq}>
+                              Pede: {formatQty(reqQty, ing.unit)}
+                              {status.approx && <Text style={styles.approxText}> {status.approx}</Text>}
+                            </Text>
+                          </View>
+
+                          <View style={styles.stockStatusContainer}>
+                            {hasEnough ? (
+                              <View style={[styles.statusBadge, { backgroundColor: '#34C75915', borderColor: '#34C759' }]}>
+                                <Ionicons name="checkmark-circle" size={14} color="#34C759" />
+                                <Text style={[styles.statusText, { color: '#34C759' }]}>Stock OK</Text>
+                              </View>
+                            ) : hasSome ? (
+                              <View style={[styles.statusBadge, { backgroundColor: '#FF950015', borderColor: '#FF9500' }]}>
+                                <Ionicons name="warning" size={14} color="#FF9500" />
+                                <Text style={[styles.statusText, { color: '#FF9500' }]}>
+                                  Tem {formatQty(stockQty, ing.unit)} • Faltam {formatQty(missingQty, ing.unit)}
+                                </Text>
+                              </View>
+                            ) : (
+                              <View style={[styles.statusBadge, { backgroundColor: '#E1524115', borderColor: '#E15241' }]}>
+                                <Ionicons name="close-circle" size={14} color="#E15241" />
+                                <Text style={[styles.statusText, { color: '#E15241' }]}>
+                                  Faltam {formatQty(missingQty, ing.unit)}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
                         </View>
                       );
                     })}
@@ -376,9 +420,16 @@ const styles = StyleSheet.create({
   ingCard: { backgroundColor: COLORS.card, padding: SPACING.md, borderRadius: RADIUS.lg, marginBottom: SPACING.lg, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5 },
   sectionTitleCompact: { fontSize: 14, fontWeight: "800", color: COLORS.text.secondary, textTransform: "uppercase", letterSpacing: 0.5 },
   catHeader: { fontSize: 11, fontWeight: "800", color: COLORS.primary, marginTop: 8, marginBottom: 4, textTransform: 'uppercase' },
-  ingRow: { flexDirection: "row", alignItems: "center", paddingVertical: 4, marginBottom: 6 },
-  ingName: { flex: 1, fontSize: 14, color: COLORS.text.primary, fontWeight: "500", marginLeft: 8 },
-  ingQty: { fontSize: 13, color: COLORS.text.primary, fontWeight: "700" },
+  
+  // --- NOVOS ESTILOS PARA OS INGREDIENTES ---
+  ingredientRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  ingredientInfo: { flex: 1, marginRight: 10 },
+  ingredientName: { fontSize: 14, fontWeight: '600', color: COLORS.text.primary, marginBottom: 2 },
+  ingredientReq: { fontSize: 12, color: COLORS.text.secondary, fontWeight: '500' },
+  stockStatusContainer: { alignItems: 'flex-end' },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.sm, borderWidth: 1, gap: 4 },
+  statusText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+
   approxText: { fontSize: 11, color: COLORS.text.secondary, fontWeight: '400' },
   emptyText: { textAlign: 'center', color: COLORS.text.secondary, paddingVertical: 10, fontSize: 12 },
 

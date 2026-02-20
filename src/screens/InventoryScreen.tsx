@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabase"; // <-- ADICIONE ESTA LINHA NO TOPO
 import {
   View,
   Text,
@@ -36,7 +37,7 @@ import { InventoryDetailsModal } from "@/components/modals/InventoryDetailsModal
 import { useToast } from "@/contexts/ToastContext";
 import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 import { Product } from "@/types";
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "@/contexts/AuthContext";
 
 const LOCATIONS = [
@@ -54,7 +55,9 @@ export default function InventoryScreen() {
   const [searchText, setSearchText] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [activeDateField, setActiveDateField] = useState<"expiry" | "purchase" | null>(null);
+  const [activeDateField, setActiveDateField] = useState<
+    "expiry" | "purchase" | null
+  >(null);
 
   const [isScanning, setIsScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
@@ -96,12 +99,15 @@ export default function InventoryScreen() {
     if (selectedProduct) {
       const qty = parseFloat(quantity) || 0;
       const size = selectedProduct.packSize || 0;
-      const unit = selectedProduct.packUnit || selectedProduct.defaultUnit || "un";
+      const unit =
+        selectedProduct.packUnit || selectedProduct.defaultUnit || "un";
 
       if (size > 0) {
         const total = qty * size;
-        if (unit === "g" && total >= 1000) setTotalDisplay(`Total: ${(total / 1000).toFixed(2)} kg`);
-        else if (unit === "ml" && total >= 1000) setTotalDisplay(`Total: ${(total / 1000).toFixed(2)} L`);
+        if (unit === "g" && total >= 1000)
+          setTotalDisplay(`Total: ${(total / 1000).toFixed(2)} kg`);
+        else if (unit === "ml" && total >= 1000)
+          setTotalDisplay(`Total: ${(total / 1000).toFixed(2)} L`);
         else setTotalDisplay(`Total: ${total} ${unit}`);
       } else {
         setTotalDisplay(`Total: ${qty} ${unit}`);
@@ -124,11 +130,17 @@ export default function InventoryScreen() {
     }
   };
 
-  const showAlert = (title: string, message: string, onConfirm: () => void, type: "info" | "danger" = "info") => {
+  const showAlert = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    type: "info" | "danger" = "info",
+  ) => {
     setAlertConfig({ visible: true, title, message, onConfirm, type });
   };
-  
-  const closeAlert = () => setAlertConfig((prev) => ({ ...prev, visible: false }));
+
+  const closeAlert = () =>
+    setAlertConfig((prev) => ({ ...prev, visible: false }));
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     setIsScanning(false);
@@ -190,14 +202,23 @@ export default function InventoryScreen() {
     setModalVisible(true);
   };
 
-  // --- DELETE COM SYNC AUTOMÁTICO ---
+// --- DELETE COM REMOÇÃO DIRETA NA NUVEM ---
   const handleDelete = (id: string) => {
     showAlert(
       "Remover Item",
       "Deseja retirar este item do stock?",
       async () => {
-        await actions.removeItem(id);
-        if (user) SyncService.notifyChanges(user.id); // SYNC AUTO
+        // 1. Remove localmente no telemóvel
+        await actions.removeItem(id); 
+
+        // 2. Remove IMEDIATAMENTE na nuvem (Supabase)
+        if (user) {
+          await supabase.from('inventory_items').delete().eq('id', id);
+          
+          // 3. Só depois notifica as outras mudanças
+          SyncService.notifyChanges(user.id); 
+        }
+
         showToast("Item removido do stock.", "info");
         closeAlert();
       },
@@ -232,7 +253,10 @@ export default function InventoryScreen() {
         showToast("Stock atualizado!", "success");
       } else {
         await InventoryRepository.createItem(itemData);
-        await NotificationService.scheduleExpiryNotification(selectedProduct.name, expiry);
+        await NotificationService.scheduleExpiryNotification(
+          selectedProduct.name,
+          expiry,
+        );
         showToast("Adicionado ao stock!", "success");
       }
 
@@ -272,17 +296,28 @@ export default function InventoryScreen() {
       );
     return (
       <View style={styles.cameraContainer}>
-        <CameraView style={StyleSheet.absoluteFillObject} onBarcodeScanned={handleBarCodeScanned} />
+        <CameraView
+          style={StyleSheet.absoluteFillObject}
+          onBarcodeScanned={handleBarCodeScanned}
+        />
         <View style={styles.cameraOverlay}>
-          <TouchableOpacity onPress={() => setIsScanning(false)} style={styles.closeCameraButton}>
-            <Text style={{ color: COLORS.text.light, fontWeight: "bold" }}>Cancelar</Text>
+          <TouchableOpacity
+            onPress={() => setIsScanning(false)}
+            style={styles.closeCameraButton}
+          >
+            <Text style={{ color: COLORS.text.light, fontWeight: "bold" }}>
+              Cancelar
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  const displayItems = items.filter((i) => i.name.toLowerCase().includes(searchText.toLowerCase()));
+  // --- ORDENAÇÃO ALFABÉTICA ADICIONADA AQUI ---
+  const displayItems = items
+    .filter((i) => i.name.toLowerCase().includes(searchText.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -308,11 +343,25 @@ export default function InventoryScreen() {
           {["all", "fridge", "pantry", "freezer"].map((f) => (
             <TouchableOpacity
               key={f}
-              style={[styles.filterChip, filter === f && styles.filterChipActive]}
+              style={[
+                styles.filterChip,
+                filter === f && styles.filterChipActive,
+              ]}
               onPress={() => setFilter(f as any)}
             >
-              <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>
-                {f === "all" ? "Todos" : f === "fridge" ? "Geladeira" : f === "pantry" ? "Armário" : "Freezer"}
+              <Text
+                style={[
+                  styles.filterText,
+                  filter === f && styles.filterTextActive,
+                ]}
+              >
+                {f === "all"
+                  ? "Todos"
+                  : f === "fridge"
+                    ? "Geladeira"
+                    : f === "pantry"
+                      ? "Armário"
+                      : "Freezer"}
               </Text>
             </TouchableOpacity>
           ))}
@@ -336,12 +385,19 @@ export default function InventoryScreen() {
           ListEmptyComponent={
             <View style={{ alignItems: "center", marginTop: 50 }}>
               <Ionicons name="basket-outline" size={60} color={COLORS.border} />
-              <Text style={{ color: COLORS.text.secondary, marginTop: 10 }}>Stock vazio</Text>
+              <Text style={{ color: COLORS.text.secondary, marginTop: 10 }}>
+                Stock vazio
+              </Text>
             </View>
           }
         />
 
-        <FloatingButton onPress={() => { resetForm(); setModalVisible(true); }} />
+        <FloatingButton
+          onPress={() => {
+            resetForm();
+            setModalVisible(true);
+          }}
+        />
 
         <BottomSheetModal
           visible={modalVisible}
@@ -361,26 +417,52 @@ export default function InventoryScreen() {
                       onSelect={selectProduct}
                     />
                   </View>
-                  <TouchableOpacity style={styles.scanBtnMini} onPress={() => setIsScanning(true)}>
-                    <Ionicons name="barcode-outline" size={24} color={COLORS.text.light} />
+                  <TouchableOpacity
+                    style={styles.scanBtnMini}
+                    onPress={() => setIsScanning(true)}
+                  >
+                    <Ionicons
+                      name="barcode-outline"
+                      size={24}
+                      color={COLORS.text.light}
+                    />
                   </TouchableOpacity>
                 </View>
 
                 {catalog.length > 0 && (
                   <View style={{ marginTop: SPACING.lg }}>
                     <Text style={styles.label}>Ou selecione do registo:</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 5 }}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ gap: 10, paddingVertical: 5 }}
+                    >
                       {catalog.map((p) => (
-                        <TouchableOpacity key={p.id} style={styles.quickCard} onPress={() => selectProduct(p)}>
+                        <TouchableOpacity
+                          key={p.id}
+                          style={styles.quickCard}
+                          onPress={() => selectProduct(p)}
+                        >
                           {p.image ? (
-                            <Image source={{ uri: p.image }} style={styles.quickImg} />
+                            <Image
+                              source={{ uri: p.image }}
+                              style={styles.quickImg}
+                            />
                           ) : (
                             <View style={styles.quickPlaceholder}>
-                              <Ionicons name="cube-outline" size={20} color={COLORS.primary} />
+                              <Ionicons
+                                name="cube-outline"
+                                size={20}
+                                color={COLORS.primary}
+                              />
                             </View>
                           )}
-                          <Text style={styles.quickName} numberOfLines={1}>{p.name}</Text>
-                          <Text style={styles.quickBrand} numberOfLines={1}>{p.brand || "Geral"}</Text>
+                          <Text style={styles.quickName} numberOfLines={1}>
+                            {p.name}
+                          </Text>
+                          <Text style={styles.quickBrand} numberOfLines={1}>
+                            {p.brand || "Geral"}
+                          </Text>
                         </TouchableOpacity>
                       ))}
                     </ScrollView>
@@ -391,16 +473,24 @@ export default function InventoryScreen() {
               <View style={styles.productBadge}>
                 <View style={styles.productInfo}>
                   {selectedProduct.image ? (
-                    <Image source={{ uri: selectedProduct.image }} style={styles.miniImg} />
+                    <Image
+                      source={{ uri: selectedProduct.image }}
+                      style={styles.miniImg}
+                    />
                   ) : (
                     <View style={styles.placeholderImg}>
                       <Ionicons name="cube" size={20} color={COLORS.primary} />
                     </View>
                   )}
                   <View>
-                    <Text style={styles.productName}>{selectedProduct.name}</Text>
+                    <Text style={styles.productName}>
+                      {selectedProduct.name}
+                    </Text>
                     <Text style={styles.productSub}>
-                      {selectedProduct.brand} {selectedProduct.packSize ? `• ${selectedProduct.packSize}${selectedProduct.packUnit}` : ""}
+                      {selectedProduct.brand}{" "}
+                      {selectedProduct.packSize
+                        ? `• ${selectedProduct.packSize}${selectedProduct.packUnit}`
+                        : ""}
                     </Text>
                   </View>
                 </View>
@@ -417,11 +507,17 @@ export default function InventoryScreen() {
             <>
               <View style={styles.section}>
                 <Text style={styles.label}>
-                  {selectedProduct.packSize && selectedProduct.packSize > 0 ? "Quantas embalagens?" : "Quantidade"}
+                  {selectedProduct.packSize && selectedProduct.packSize > 0
+                    ? "Quantas embalagens?"
+                    : "Quantidade"}
                 </Text>
                 <View style={styles.qtyContainer}>
                   <TouchableOpacity
-                    onPress={() => setQuantity(Math.max(0, parseFloat(quantity) - 1).toString())}
+                    onPress={() =>
+                      setQuantity(
+                        Math.max(0, parseFloat(quantity) - 1).toString(),
+                      )
+                    }
                     style={styles.qtyBtn}
                   >
                     <Ionicons name="remove" size={22} color={COLORS.primary} />
@@ -433,28 +529,50 @@ export default function InventoryScreen() {
                     keyboardType="numeric"
                   />
                   <TouchableOpacity
-                    onPress={() => setQuantity((parseFloat(quantity || "0") + 1).toString())}
+                    onPress={() =>
+                      setQuantity((parseFloat(quantity || "0") + 1).toString())
+                    }
                     style={styles.qtyBtn}
                   >
                     <Ionicons name="add" size={22} color={COLORS.primary} />
                   </TouchableOpacity>
                 </View>
-                {totalDisplay ? <Text style={styles.totalHint}>{totalDisplay}</Text> : null}
+                {totalDisplay ? (
+                  <Text style={styles.totalHint}>{totalDisplay}</Text>
+                ) : null}
               </View>
 
               <View style={styles.dateGrid}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>Validade</Text>
-                  <TouchableOpacity onPress={() => openDatePicker("expiry")} style={styles.dateBox}>
-                    <Ionicons name="calendar-outline" size={18} color={COLORS.text.secondary} />
-                    <Text style={styles.dateValueText}>{expiry.toLocaleDateString("pt-BR")}</Text>
+                  <TouchableOpacity
+                    onPress={() => openDatePicker("expiry")}
+                    style={styles.dateBox}
+                  >
+                    <Ionicons
+                      name="calendar-outline"
+                      size={18}
+                      color={COLORS.text.secondary}
+                    />
+                    <Text style={styles.dateValueText}>
+                      {expiry.toLocaleDateString("pt-BR")}
+                    </Text>
                   </TouchableOpacity>
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>Compra</Text>
-                  <TouchableOpacity onPress={() => openDatePicker("purchase")} style={styles.dateBox}>
-                    <Ionicons name="cart-outline" size={18} color={COLORS.text.secondary} />
-                    <Text style={styles.dateValueText}>{purchaseDate.toLocaleDateString("pt-BR")}</Text>
+                  <TouchableOpacity
+                    onPress={() => openDatePicker("purchase")}
+                    style={styles.dateBox}
+                  >
+                    <Ionicons
+                      name="cart-outline"
+                      size={18}
+                      color={COLORS.text.secondary}
+                    />
+                    <Text style={styles.dateValueText}>
+                      {purchaseDate.toLocaleDateString("pt-BR")}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -465,22 +583,38 @@ export default function InventoryScreen() {
                   {LOCATIONS.map((loc) => (
                     <TouchableOpacity
                       key={loc.id}
-                      style={[styles.locItem, location === loc.id && styles.locItemActive]}
+                      style={[
+                        styles.locItem,
+                        location === loc.id && styles.locItemActive,
+                      ]}
                       onPress={() => setLocation(loc.id)}
                     >
                       <Ionicons
                         name={loc.icon as any}
                         size={22}
-                        color={location === loc.id ? COLORS.text.light : COLORS.text.secondary}
+                        color={
+                          location === loc.id
+                            ? COLORS.text.light
+                            : COLORS.text.secondary
+                        }
                       />
-                      <Text style={[styles.locLabel, location === loc.id && styles.locLabelActive]}>{loc.label}</Text>
+                      <Text
+                        style={[
+                          styles.locLabel,
+                          location === loc.id && styles.locLabelActive,
+                        ]}
+                      >
+                        {loc.label}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
 
               <PrimaryButton
-                title={editingItemId ? "Guardar Alterações" : "Adicionar ao Stock"}
+                title={
+                  editingItemId ? "Guardar Alterações" : "Adicionar ao Stock"
+                }
                 onPress={handleSave}
                 disabled={!selectedProduct}
                 containerStyle={{ marginTop: 10 }}
@@ -507,13 +641,15 @@ export default function InventoryScreen() {
           onConfirm={alertConfig.onConfirm}
           confirmText={alertConfig.type === "danger" ? "Excluir" : "Confirmar"}
         />
-        <InventoryDetailsModal visible={showDetailModal} item={detailItem} onClose={() => setShowDetailModal(false)} />
+        <InventoryDetailsModal
+          visible={showDetailModal}
+          item={detailItem}
+          onClose={() => setShowDetailModal(false)}
+        />
       </SafeAreaView>
     </GestureHandlerRootView>
   );
 }
-
-// ... Estilos permanecem iguais
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },

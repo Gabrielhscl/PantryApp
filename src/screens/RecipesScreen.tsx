@@ -5,18 +5,18 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-import { RecipeRepository } from "../repositories/recipeRepository";
-import { InventoryRepository } from "../repositories/inventoryRepository";
-import { RecipeService } from "../services/recipeService";
-import { SyncService } from "../services/SyncService"; // IMPORTADO
-import { useAuth } from "../contexts/AuthContext"; // IMPORTADO
+import { RecipeRepository } from "@/repositories/recipeRepository";
+import { InventoryRepository } from "@/repositories/inventoryRepository";
+import { RecipeService } from "@/services/recipeService";
+import { SyncService } from "@/services/SyncService"; // IMPORTADO
+import { useAuth } from "@/contexts/AuthContext"; // IMPORTADO
 
-import { ScreenHeader } from "../components/ui/ScreenHeader";
-import { FloatingButton } from "../components/ui/FloatingButton";
-import { RecipeCard } from "../components/RecipeCard";
-import { AddRecipeModal } from "../components/modals/AddRecipeModal";
-import { RecipeDetailsModal } from "../components/modals/RecipeDetailsModal";
-import { AlertModal } from "../components/modals/AlertModal";
+import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { FloatingButton } from "@/components/ui/FloatingButton";
+import { RecipeCard } from "@/components/RecipeCard";
+import { AddRecipeModal } from "@/components/modals/AddRecipeModal";
+import { RecipeDetailsModal } from "@/components/modals/RecipeDetailsModal";
+import { AlertModal } from "@/components/modals/AlertModal";
 
 export default function RecipesScreen() {
   const { user } = useAuth(); // ADICIONADO PARA TER ACESSO AO USER ID
@@ -71,6 +71,7 @@ export default function RecipesScreen() {
     }
 
     loadData();
+    setModalVisible(false);
   };
 
   // --- DELETE COM SYNC AUTOMÁTICO ---

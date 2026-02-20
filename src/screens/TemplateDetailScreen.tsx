@@ -27,8 +27,9 @@ import { db } from "@/database/db";
 import { templateItems, shoppingListItems, inventoryItems } from "@/database/schema"; 
 import { ProductRepository } from "@/repositories/productRepository";
 import { ProductService } from "@/services/productService";
-import { SyncService } from "@/services/SyncService"; // --- IMPORT NOVO
-import { useAuth } from "@/contexts/AuthContext"; // --- IMPORT NOVO
+import { SyncService } from "@/services/SyncService"; 
+import { useAuth } from "@/contexts/AuthContext"; 
+import { supabase } from "@/lib/supabase"; // <-- IMPORTANTE: ADICIONADO AQUI
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { useToast } from "@/contexts/ToastContext";
@@ -36,7 +37,7 @@ import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 import { Product } from "@/types";
 
 export default function TemplateDetailScreen({ route, navigation }: any) {
-  const { user } = useAuth(); // --- NOVO: PEGA O UTILIZADOR
+  const { user } = useAuth();
   const templateId = route?.params?.templateId;
   const templateName = route?.params?.templateName || "Lista Fixa";
   
@@ -132,7 +133,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
           const all = await ProductRepository.findAll();
           product = all.find((p) => p.id === newId) || null;
           setCatalog(all);
-          if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+          if (user) SyncService.notifyChanges(user.id); 
           showToast("Produto adicionado ao catálogo!", "success");
         } else return showToast("Produto não encontrado.", "error");
       } catch (e) { return showToast("Falha na leitura.", "error"); }
@@ -177,7 +178,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
         showToast("Adicionado à lista fixa!", "success");
       }
 
-      if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+      if (user) SyncService.notifyChanges(user.id); 
 
       await loadItems(); closeModal();
     } catch (e) { showToast("Erro ao guardar item", "error"); }
@@ -210,15 +211,23 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
   const toggleItem = async (id: string, currentStatus: boolean) => {
     try {
       await db.update(templateItems).set({ isChecked: !currentStatus, updatedAt: new Date(), isSynced: false }).where(eq(templateItems.id, id));
-      if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+      if (user) SyncService.notifyChanges(user.id); 
       await loadItems();
     } catch (error) { showToast("Erro ao marcar o item.", "error"); }
   };
 
+  // --- CORREÇÃO: DELETE REMOVENDO DA NUVEM DIRETAMENTE ---
   const removeItem = async (id: string) => {
     try { 
+      // 1. Apaga do SQLite
       await db.delete(templateItems).where(eq(templateItems.id, id)); 
-      if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+      
+      // 2. Apaga do Supabase para não voltar como fantasma
+      if (user) {
+        await supabase.from('template_items_v2').delete().eq('id', id);
+        SyncService.notifyChanges(user.id); 
+      }
+
       await loadItems(); 
       showToast("Item removido.", "success");
     } catch (error) { showToast("Erro ao remover", "error"); }
@@ -268,7 +277,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
       }
 
       if ((addedCount > 0 || updatedCount > 0) && user) {
-        SyncService.notifyChanges(user.id); // --- SYNC AUTO
+        SyncService.notifyChanges(user.id); 
       }
 
       let msg = `${addedCount} novos e ${updatedCount} somados no Carrinho!`;

@@ -21,7 +21,9 @@
       },
       "package": "com.gabriel.pantryapp",
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -34,6 +36,11 @@
           "cameraPermission": "Permitir acesso à câmera para ler códigos de barras."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a18ca5c1-257a-4d6d-b7a2-e7cd91ea0ad5"
+      }
+    }
   }
 }

@@ -28,15 +28,16 @@ import { ShoppingRepository } from "@/repositories/shoppingRepository";
 import { ProductRepository } from "@/repositories/productRepository";
 import { InventoryRepository } from "@/repositories/inventoryRepository";
 import { ProductService } from "@/services/productService";
-import { SyncService } from "@/services/SyncService"; // --- IMPORT NOVO
-import { useAuth } from "@/contexts/AuthContext"; // --- IMPORT NOVO
+import { SyncService } from "@/services/SyncService"; 
+import { useAuth } from "@/contexts/AuthContext"; 
+import { supabase } from "@/lib/supabase"; // <-- IMPORTANTE: ADICIONADO AQUI
 import { useShoppingList } from "@/hooks/useShoppingList";
 import { useToast } from "@/contexts/ToastContext";
 import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 import { Product } from "@/types";
 
 export default function ShoppingListScreen({ navigation }: any) {
-  const { user } = useAuth(); // --- NOVO: PEGA O UTILIZADOR
+  const { user } = useAuth(); 
   const { items, refresh, toggleItem, removeItem } = useShoppingList();
   const { showToast } = useToast();
 
@@ -159,7 +160,7 @@ export default function ShoppingListScreen({ navigation }: any) {
           product = all.find((p) => p.id === newId) || null;
           setCatalog(all);
           
-          if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+          if (user) SyncService.notifyChanges(user.id); 
           
           showToast("Produto adicionado ao catálogo!", "success");
         } else {
@@ -180,7 +181,6 @@ export default function ShoppingListScreen({ navigation }: any) {
     setQuery(product.name);
   };
 
-  // --- FUNÇÃO COM SYNC AUTO
   const handleSave = async () => {
     if (!query.trim() && !selectedProduct)
       return showToast("Selecione um produto.", "error");
@@ -232,7 +232,7 @@ export default function ShoppingListScreen({ navigation }: any) {
         await ShoppingRepository.updateItem(editingItemId, data);
       else await ShoppingRepository.addItem(data);
       
-      if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+      if (user) SyncService.notifyChanges(user.id); 
       
       await refresh();
       closeModal();
@@ -302,12 +302,13 @@ export default function ShoppingListScreen({ navigation }: any) {
     setModalVisible(true);
   };
 
-  // --- FUNÇÃO COM SYNC AUTO
+  // --- CORREÇÃO: REMOÇÃO DIRETA DA NUVEM AO FINALIZAR COMPRAS ---
   const confirmFinishShopping = async (checkedItems: any[]) => {
     for (const item of checkedItems) {
       const prod = catalog.find((p) => p.id === item.productId);
       const loc = prod?.defaultLocation || "pantry";
 
+      // Adiciona no stock
       await InventoryRepository.createItem({
         productId: item.productId,
         name: item.name,
@@ -316,10 +317,17 @@ export default function ShoppingListScreen({ navigation }: any) {
         location: loc,
         expiryDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
       });
+      
+      // Apaga localmente
       await ShoppingRepository.deleteItem(item.id);
+      
+      // Apaga na nuvem (Supabase) para não voltar como fantasma
+      if (user) {
+        await supabase.from('shopping_list_items').delete().eq('id', item.id);
+      }
     }
     
-    if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+    if (user) SyncService.notifyChanges(user.id); 
     
     await refresh();
     setAlertConfig((prev) => ({ ...prev, visible: false }));
@@ -397,10 +405,14 @@ export default function ShoppingListScreen({ navigation }: any) {
     return acc;
   }, {});
 
-  const sections = Object.keys(grouped).map((key) => ({
-    title: key,
-    data: grouped[key].items,
-    total: grouped[key].categoryTotal,
+  const sections = Object.keys(grouped)
+    .sort() 
+    .map((key) => ({
+      title: key,
+      total: grouped[key].categoryTotal,
+      data: grouped[key].items.sort((a: any, b: any) => 
+        a.name.localeCompare(b.name)
+      ), 
   }));
 
   const listTotal = filteredItems.reduce(
@@ -656,13 +668,11 @@ export default function ShoppingListScreen({ navigation }: any) {
         renderItem={({ item }) => (
           <ShoppingItemCard
             item={item}
-            // --- SYNC AUTO NO TOGGLE
             onToggle={async () => {
               await toggleItem(item.id, item.isChecked);
               if (user) SyncService.notifyChanges(user.id);
             }}
             onEdit={() => handleEdit(item)}
-            // --- SYNC AUTO AO APAGAR
             onDelete={() => {
               setAlertConfig({
                 visible: true,
@@ -671,8 +681,12 @@ export default function ShoppingListScreen({ navigation }: any) {
                 type: "danger",
                 confirmText: "Sim, Excluir",
                 onConfirm: async () => {
+                  // --- CORREÇÃO: REMOÇÃO DIRETA DA NUVEM AO APAGAR ITEM ---
                   await removeItem(item.id);
-                  if (user) SyncService.notifyChanges(user.id);
+                  if (user) {
+                    await supabase.from('shopping_list_items').delete().eq('id', item.id);
+                    SyncService.notifyChanges(user.id);
+                  }
                   setAlertConfig((prev) => ({ ...prev, visible: false }));
                 },
               });

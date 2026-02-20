@@ -3,7 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  SectionList,
   TouchableOpacity,
   TextInput,
   Image,
@@ -31,6 +31,7 @@ import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { ProductCard } from "@/components/ProductCard";
 import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 import { Product } from "@/types";
+import { supabase } from "@/lib/supabase";
 
 const CATEGORIES = [
   "Grãos",
@@ -65,7 +66,7 @@ const SUGGESTED_TAGS = [
   "Orgânico",
 ];
 
-export default function ProductsScreen() {
+export default function ProductsScreen({ navigation }: any) {
   const { user } = useAuth(); // ADICIONADO PARA TER ACESSO AO USER ID
   const [products, setProducts] = useState<Product[]>([]);
   const [searchText, setSearchText] = useState("");
@@ -218,25 +219,37 @@ export default function ProductsScreen() {
     }
   };
 
+  // --- DELETE COM TRATAMENTO DE ERRO E REMOÇÃO NA NUVEM ---
   const handleDelete = (id: string) => {
     Alert.alert(
-      "Excluir",
-      "Remover este item apagará o histórico dele. Confirmar?",
+      "Excluir Produto",
+      "Só é possível apagar produtos que não estejam no seu Estoque, Listas ou Receitas. Confirmar?",
       [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Excluir",
           style: "destructive",
           onPress: async () => {
-            await ProductRepository.deleteProduct(id);
-            
-            // --- SINCRONIZAÇÃO AUTOMÁTICA APÓS EXCLUIR ---
-            if (user) {
-              SyncService.notifyChanges(user.id);
+            try {
+              // 1. Tenta remover localmente. Se estiver em uso, vai disparar o "catch" abaixo
+              await ProductRepository.deleteProduct(id);
+              
+              // 2. Remove IMEDIATAMENTE na nuvem (Evitar "efeito fantasma")
+              if (user) {
+                await supabase.from('products').delete().eq('id', id);
+                SyncService.notifyChanges(user.id);
+              }
+              
+              showToast("Produto removido com sucesso.", "success");
+              loadProducts();
+            } catch (error) {
+              // 3. Captura o erro do SQLite caso o produto esteja em uso
+              console.log("Erro ao excluir produto:", error);
+              showToast(
+                "Não pode apagar! Este produto está a ser usado no Estoque, Lista ou Receitas.", 
+                "error"
+              );
             }
-            
-            showToast("Produto removido.", "info");
-            loadProducts();
           },
         },
       ],
@@ -318,9 +331,31 @@ export default function ProductsScreen() {
     );
   }
 
+  // --- AGRUPAMENTO E ORDENAÇÃO ALFABÉTICA ---
+  // 1. Filtrar pelo texto da pesquisa
   const filteredProducts = products.filter((p) =>
     p.name.toLowerCase().includes(searchText.toLowerCase()),
   );
+
+  // 2. Agrupar por categoria
+  const groupedProducts = filteredProducts.reduce((acc: any, product) => {
+    const cat = product.category || "Outros";
+    if (!acc[cat]) {
+      acc[cat] = [];
+    }
+    acc[cat].push(product);
+    return acc;
+  }, {});
+
+  // 3. Transformar em formato para SectionList e ordenar os itens internamente
+  const sections = Object.keys(groupedProducts)
+    .sort() // Ordena os títulos das categorias
+    .map((categoryTitle) => ({
+      title: categoryTitle,
+      data: groupedProducts[categoryTitle].sort((a: Product, b: Product) => 
+        a.name.localeCompare(b.name)
+      ), // Ordena os produtos alfabeticamente dentro de cada categoria
+    }));
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -329,6 +364,7 @@ export default function ProductsScreen() {
           title="Catálogo" 
           subtitle="Base de dados de produtos" 
           icon="chevron-back"
+          onIconPress={() => navigation.goBack()}
         />
 
         <View style={styles.searchBox}>
@@ -341,10 +377,14 @@ export default function ProductsScreen() {
           />
         </View>
 
-        <FlatList
-          data={filteredProducts}
+        <SectionList
+          sections={sections}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 100 }}
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.sectionHeaderTitle}>{title}</Text>
+          )}
           renderItem={({ item }) => (
             <ProductCard
               data={item}
@@ -352,6 +392,13 @@ export default function ProductsScreen() {
               onDelete={() => handleDelete(item.id)}
             />
           )}
+          ListEmptyComponent={
+            <View style={{ alignItems: "center", marginTop: 40 }}>
+              <Text style={{ color: COLORS.text.secondary }}>
+                Nenhum produto encontrado.
+              </Text>
+            </View>
+          }
         />
 
         <FloatingButton
@@ -591,12 +638,22 @@ export default function ProductsScreen() {
   );
 }
 
-// ... Estilos permanecem os mesmos ...
-
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  
+  // ESTILO NOVO PARA O TÍTULO DA CATEGORIA NA LISTA
+  sectionHeaderTitle: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: COLORS.text.secondary,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginTop: SPACING.md,
+    marginBottom: SPACING.sm,
+    marginLeft: 4,
+  },
+
   searchBox: {
     flexDirection: "row",
     backgroundColor: COLORS.card,

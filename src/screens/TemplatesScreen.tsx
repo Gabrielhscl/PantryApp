@@ -30,9 +30,10 @@ import { v4 as uuidv4 } from "uuid";
 import { useToast } from "@/contexts/ToastContext";
 import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 
-// --- IMPORTS PARA SINCRONIZAÇÃO ---
+// --- IMPORTS PARA SINCRONIZAÇÃO E SUPABASE ---
 import { SyncService } from "@/services/SyncService";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase"; // IMPORTANTE: ADICIONADO PARA DELETAR NA NUVEM
 
 export default function TemplatesScreen({ navigation }: any) {
   const { showToast } = useToast();
@@ -125,7 +126,6 @@ export default function TemplatesScreen({ navigation }: any) {
       if (editingTemplateId) {
         await db
           .update(shoppingListTemplates)
-          // Adicionado isSynced: false para forçar envio
           .set({ name: templateName, updatedAt: new Date(), isSynced: false })
           .where(eq(shoppingListTemplates.id, editingTemplateId));
         showToast("Lista atualizada!", "success");
@@ -135,12 +135,11 @@ export default function TemplatesScreen({ navigation }: any) {
           name: templateName,
           createdAt: new Date(),
           updatedAt: new Date(),
-          isSynced: false // Marca como não sincronizado
+          isSynced: false 
         });
         showToast("Lista fixa criada!", "success");
       }
 
-      // DISPARA SYNC
       if (user) SyncService.notifyChanges(user.id);
 
       closeModal();
@@ -150,20 +149,28 @@ export default function TemplatesScreen({ navigation }: any) {
     }
   };
 
+  // --- CORREÇÃO: DELETE COM REMOÇÃO DIRETA NA NUVEM ---
   const handleDelete = (id: string, name: string) => {
     setAlertConfig({
       visible: true,
       title: "Apagar Lista Fixa",
-      message: `Tem a certeza que quer apagar a lista "${name}" permanentemente?`,
+      message: `Tem a certeza que quer apagar a lista "${name}" e todos os seus itens permanentemente?`,
       type: "danger",
       confirmText: "Sim, Apagar",
       onConfirm: async () => {
-        await db
-          .delete(shoppingListTemplates)
-          .where(eq(shoppingListTemplates.id, id));
+        // 1. Apaga itens e template localmente (para refletir na tela imediatamente)
+        await db.delete(templateItems).where(eq(templateItems.templateId, id));
+        await db.delete(shoppingListTemplates).where(eq(shoppingListTemplates.id, id));
         
-        // DISPARA SYNC
-        if (user) SyncService.notifyChanges(user.id);
+        // 2. Apaga diretamente no Supabase para evitar efeito fantasma
+        if (user) {
+          // Apaga itens do template primeiro
+          await supabase.from('template_items_v2').delete().eq('template_id', id);
+          // Apaga o template
+          await supabase.from('shopping_list_templates').delete().eq('id', id);
+          
+          SyncService.notifyChanges(user.id);
+        }
 
         setAlertConfig((prev) => ({ ...prev, visible: false }));
         loadTemplates();
@@ -221,7 +228,6 @@ export default function TemplatesScreen({ navigation }: any) {
           const newQuantity = existingItem.quantity + item.quantity;
           await db
             .update(shoppingListItems)
-            // isSynced: false para avisar que mudou
             .set({
               quantity: newQuantity,
               category: compoundCategory,
@@ -242,13 +248,12 @@ export default function TemplatesScreen({ navigation }: any) {
             isChecked: false,
             createdAt: new Date(),
             updatedAt: new Date(),
-            isSynced: false // Novo item
+            isSynced: false 
           });
           addedCount++;
         }
       }
 
-      // DISPARA SYNC PARA ATUALIZAR O CARRINHO NA NUVEM
       if (user) SyncService.notifyChanges(user.id);
 
       showToast(
@@ -261,7 +266,6 @@ export default function TemplatesScreen({ navigation }: any) {
     }
   };
 
-  // --- NOVA FUNÇÃO RENDERIZAÇÃO DE BOTÕES DO SWIPE ---
   const renderRightActions = (
     item: any,
     progress: any,
@@ -312,7 +316,6 @@ export default function TemplatesScreen({ navigation }: any) {
           const styleProps = getGradientForTemplate(item.name);
 
           return (
-            // ENVOLVENDO O CARTÃO NO SWIPEABLE
             <Swipeable
               renderRightActions={(progress, dragX) =>
                 renderRightActions(item, progress, dragX)
@@ -369,7 +372,6 @@ export default function TemplatesScreen({ navigation }: any) {
                   </Text>
                 </View>
 
-                {/* Botão de Usar Rápido no canto do cartão */}
                 <TouchableOpacity
                   style={styles.useButton}
                   onPress={() => handleUseTemplate(item)}
@@ -444,8 +446,6 @@ export default function TemplatesScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-
-  // ESTILOS PARA O GESTO SWIPEABLE
   swipeContainer: {
     marginBottom: SPACING.lg,
     borderRadius: RADIUS.lg,
@@ -454,7 +454,7 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     flexDirection: "row",
-    width: 130, // Largura dos dois botões somados
+    width: 130, 
     height: "100%",
   },
   actionBtn: {
@@ -462,7 +462,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   templateCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -484,7 +483,6 @@ const styles = StyleSheet.create({
   cardInfo: { flex: 1 },
   cardTitle: { fontSize: 18, fontWeight: "800", marginBottom: 4 },
   cardSub: { fontSize: 13, fontWeight: "500" },
-
   useButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -495,7 +493,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   useButtonText: { color: "#FFF", fontSize: 12, fontWeight: "800" },
-
   empty: { alignItems: "center", marginTop: 80, paddingHorizontal: 40 },
   emptyIcon: {
     width: 80,
@@ -518,7 +515,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
-
   label: {
     fontSize: 13,
     fontWeight: "700",

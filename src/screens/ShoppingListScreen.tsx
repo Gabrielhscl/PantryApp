@@ -28,12 +28,15 @@ import { ShoppingRepository } from "@/repositories/shoppingRepository";
 import { ProductRepository } from "@/repositories/productRepository";
 import { InventoryRepository } from "@/repositories/inventoryRepository";
 import { ProductService } from "@/services/productService";
+import { SyncService } from "@/services/SyncService"; // --- IMPORT NOVO
+import { useAuth } from "@/contexts/AuthContext"; // --- IMPORT NOVO
 import { useShoppingList } from "@/hooks/useShoppingList";
 import { useToast } from "@/contexts/ToastContext";
 import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 import { Product } from "@/types";
 
 export default function ShoppingListScreen({ navigation }: any) {
+  const { user } = useAuth(); // --- NOVO: PEGA O UTILIZADOR
   const { items, refresh, toggleItem, removeItem } = useShoppingList();
   const { showToast } = useToast();
 
@@ -58,7 +61,6 @@ export default function ShoppingListScreen({ navigation }: any) {
   const [price, setPrice] = useState("");
   const [inputMode, setInputMode] = useState<"pack" | "measure">("pack");
 
-  // NOVO ESTADO PARA O FILTRO
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
   useFocusEffect(
@@ -154,8 +156,11 @@ export default function ShoppingListScreen({ navigation }: any) {
             allergens: info.allergens,
           });
           const all = await ProductRepository.findAll();
-          product = all.find((p) => p.id === newId);
+          product = all.find((p) => p.id === newId) || null;
           setCatalog(all);
+          
+          if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+          
           showToast("Produto adicionado ao catálogo!", "success");
         } else {
           return showToast("Produto não encontrado.", "error");
@@ -175,6 +180,7 @@ export default function ShoppingListScreen({ navigation }: any) {
     setQuery(product.name);
   };
 
+  // --- FUNÇÃO COM SYNC AUTO
   const handleSave = async () => {
     if (!query.trim() && !selectedProduct)
       return showToast("Selecione um produto.", "error");
@@ -203,7 +209,6 @@ export default function ShoppingListScreen({ navigation }: any) {
         selectedProduct?.packUnit || selectedProduct?.defaultUnit || "un";
     }
 
-    // Mantém a estrutura compound (Categoria|Receita) se ela existir ao editar, senão salva a categoria normal
     let saveCategory = selectedProduct?.category || "Outros";
     if (editingItemId) {
       const oldItem = items.find((i) => i.id === editingItemId);
@@ -226,6 +231,9 @@ export default function ShoppingListScreen({ navigation }: any) {
       if (editingItemId)
         await ShoppingRepository.updateItem(editingItemId, data);
       else await ShoppingRepository.addItem(data);
+      
+      if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+      
       await refresh();
       closeModal();
     } catch (e) {
@@ -294,6 +302,7 @@ export default function ShoppingListScreen({ navigation }: any) {
     setModalVisible(true);
   };
 
+  // --- FUNÇÃO COM SYNC AUTO
   const confirmFinishShopping = async (checkedItems: any[]) => {
     for (const item of checkedItems) {
       const prod = catalog.find((p) => p.id === item.productId);
@@ -309,6 +318,9 @@ export default function ShoppingListScreen({ navigation }: any) {
       });
       await ShoppingRepository.deleteItem(item.id);
     }
+    
+    if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+    
     await refresh();
     setAlertConfig((prev) => ({ ...prev, visible: false }));
     showToast("Compras guardadas no stock!", "success");
@@ -346,25 +358,21 @@ export default function ShoppingListScreen({ navigation }: any) {
     setPrice("");
   };
 
-  // --- LÓGICA MÁGICA DE FILTROS E AGRUPAMENTO ---
-
-  // 1. Extrai todas as "Tags" de filtro (Receitas + Categorias Reais)
   const availableFilters = new Set<string>();
   items.forEach((item) => {
     const cat = item.category || "Outros";
     if (cat.includes("|")) {
       const [realCat, recipeName] = cat.split("|");
       availableFilters.add(realCat);
-      availableFilters.add(recipeName); // O nome da receita vira um filtro
+      availableFilters.add(recipeName); 
     } else {
       availableFilters.add(cat);
     }
   });
   const filterTabs = Array.from(availableFilters).sort();
 
-  // 2. Aplica o Filtro Selecionado
   const filteredItems = items.filter((item) => {
-    if (!activeFilter) return true; // Mostra tudo
+    if (!activeFilter) return true; 
 
     const cat = item.category || "Outros";
     if (cat.includes("|")) {
@@ -374,11 +382,9 @@ export default function ShoppingListScreen({ navigation }: any) {
     return cat === activeFilter;
   });
 
-  // 3. Agrupa APENAS as categorias reais para desenhar as seções
   const grouped = filteredItems.reduce((acc: any, item: any) => {
     let displayCat = item.category || "Outros";
 
-    // Se tiver o truque da receita, usamos apenas o lado esquerdo (Categoria Real) para agrupar
     if (displayCat.includes("|")) {
       displayCat = displayCat.split("|")[0];
     }
@@ -401,8 +407,6 @@ export default function ShoppingListScreen({ navigation }: any) {
     (acc, item) => acc + (item.price || 0),
     0,
   );
-
-  // --------------------------------------------------
 
   const getLocationInfo = (loc: string) => {
     switch (loc) {
@@ -514,7 +518,6 @@ export default function ShoppingListScreen({ navigation }: any) {
         }
       />
 
-      {/* --- BARRA DE FILTROS HORIZONTAL --- */}
       {filterTabs.length > 0 && (
         <View style={styles.filtersWrapper}>
           <ScrollView
@@ -548,7 +551,6 @@ export default function ShoppingListScreen({ navigation }: any) {
                 ]}
                 onPress={() => setActiveFilter(tab)}
               >
-                {/* Se não for uma categoria comum, pomos um ícone de receita para destacar */}
                 {![
                   "Grãos",
                   "Massas",
@@ -654,8 +656,13 @@ export default function ShoppingListScreen({ navigation }: any) {
         renderItem={({ item }) => (
           <ShoppingItemCard
             item={item}
-            onToggle={() => toggleItem(item.id, item.isChecked)}
+            // --- SYNC AUTO NO TOGGLE
+            onToggle={async () => {
+              await toggleItem(item.id, item.isChecked);
+              if (user) SyncService.notifyChanges(user.id);
+            }}
             onEdit={() => handleEdit(item)}
+            // --- SYNC AUTO AO APAGAR
             onDelete={() => {
               setAlertConfig({
                 visible: true,
@@ -663,8 +670,9 @@ export default function ShoppingListScreen({ navigation }: any) {
                 message: `Tem certeza que quer apagar ${item.name} da lista?`,
                 type: "danger",
                 confirmText: "Sim, Excluir",
-                onConfirm: () => {
-                  removeItem(item.id);
+                onConfirm: async () => {
+                  await removeItem(item.id);
+                  if (user) SyncService.notifyChanges(user.id);
                   setAlertConfig((prev) => ({ ...prev, visible: false }));
                 },
               });
@@ -916,7 +924,6 @@ const styles = StyleSheet.create({
     padding: 10,
   },
 
-  // ESTILOS DA NOVA BARRA DE FILTROS
   filtersWrapper: {
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,

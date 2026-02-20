@@ -27,6 +27,8 @@ import { db } from "@/database/db";
 import { templateItems, shoppingListItems, inventoryItems } from "@/database/schema"; 
 import { ProductRepository } from "@/repositories/productRepository";
 import { ProductService } from "@/services/productService";
+import { SyncService } from "@/services/SyncService"; // --- IMPORT NOVO
+import { useAuth } from "@/contexts/AuthContext"; // --- IMPORT NOVO
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { useToast } from "@/contexts/ToastContext";
@@ -34,6 +36,7 @@ import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 import { Product } from "@/types";
 
 export default function TemplateDetailScreen({ route, navigation }: any) {
+  const { user } = useAuth(); // --- NOVO: PEGA O UTILIZADOR
   const templateId = route?.params?.templateId;
   const templateName = route?.params?.templateName || "Lista Fixa";
   
@@ -41,7 +44,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
 
   const [items, setItems] = useState<any[]>([]);
   
-  // --- NOVO: ESTADO PARA O FILTRO ---
+  // ESTADO PARA O FILTRO
   const [activeFilter, setActiveFilter] = useState<'all' | 'missing' | 'ok'>('all');
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -62,16 +65,13 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
   const [quantity, setQuantity] = useState("1");
   const [inputMode, setInputMode] = useState<"pack" | "measure">("pack");
 
-  // --- MÁGICA DE ESTOQUE INTEGRADA NA BUSCA ---
+  // MÁGICA DE ESTOQUE INTEGRADA NA BUSCA
   const loadItems = useCallback(async () => {
     if (!templateId || typeof templateId !== 'string' || templateId.trim() === '') return; 
     try {
-      // 1. Busca os itens da lista
       const data = await db.select().from(templateItems).where(eq(templateItems.templateId, String(templateId))).all();
-      // 2. Busca o estoque real da sua casa
       const inventory = await db.select().from(inventoryItems).all();
 
-      // 3. Cruza os dados para saber o que falta!
       const augmentedData = data.map(item => {
         let currentStock = 0;
         if (item.productId) {
@@ -132,6 +132,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
           const all = await ProductRepository.findAll();
           product = all.find((p) => p.id === newId) || null;
           setCatalog(all);
+          if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
           showToast("Produto adicionado ao catálogo!", "success");
         } else return showToast("Produto não encontrado.", "error");
       } catch (e) { return showToast("Falha na leitura.", "error"); }
@@ -162,7 +163,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
         await db.update(templateItems)
           .set({
             name: selectedProduct?.name || query, quantity: finalQuantity, unit: finalUnit,
-            category: selectedProduct?.category || "Outros", updatedAt: new Date(),
+            category: selectedProduct?.category || "Outros", updatedAt: new Date(), isSynced: false
           })
           .where(eq(templateItems.id, editingItemId));
         showToast("Item atualizado!", "success");
@@ -171,10 +172,13 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
           id: uuidv4(), templateId: templateId, productId: selectedProduct?.id || null,
           name: selectedProduct?.name || query, quantity: finalQuantity, unit: finalUnit,
           category: selectedProduct?.category || "Outros",
-          createdAt: new Date(), updatedAt: new Date(),
+          createdAt: new Date(), updatedAt: new Date(), isSynced: false
         });
         showToast("Adicionado à lista fixa!", "success");
       }
+
+      if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+
       await loadItems(); closeModal();
     } catch (e) { showToast("Erro ao guardar item", "error"); }
   };
@@ -205,13 +209,18 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
 
   const toggleItem = async (id: string, currentStatus: boolean) => {
     try {
-      await db.update(templateItems).set({ isChecked: !currentStatus, updatedAt: new Date() }).where(eq(templateItems.id, id));
+      await db.update(templateItems).set({ isChecked: !currentStatus, updatedAt: new Date(), isSynced: false }).where(eq(templateItems.id, id));
+      if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
       await loadItems();
     } catch (error) { showToast("Erro ao marcar o item.", "error"); }
   };
 
   const removeItem = async (id: string) => {
-    try { await db.delete(templateItems).where(eq(templateItems.id, id)); await loadItems(); showToast("Item removido.", "success");
+    try { 
+      await db.delete(templateItems).where(eq(templateItems.id, id)); 
+      if (user) SyncService.notifyChanges(user.id); // --- SYNC AUTO
+      await loadItems(); 
+      showToast("Item removido.", "success");
     } catch (error) { showToast("Erro ao remover", "error"); }
   };
 
@@ -229,7 +238,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
         if (onlyMissing && item.productId) {
           const stockItems = inventory.filter(inv => inv.productId === item.productId);
           const currentStock = stockItems.reduce((acc, curr) => acc + curr.quantity, 0);
-          if (currentStock >= item.quantity) { skippedCount++; continue; } // Se o estoque cobre a necessidade, ignora
+          if (currentStock >= item.quantity) { skippedCount++; continue; } 
         }
 
         const existingItem = currentShoppingList.find(c => 
@@ -240,7 +249,6 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
         const realCategory = item.category || "Outros";
         const compoundCategory = `${realCategory}|[Fixo] ${templateName}`;
 
-        // Se for só o que falta, calcula a diferença. Senão, manda tudo.
         let qtyToAdd = item.quantity;
         if (onlyMissing && item.currentStock > 0) {
             qtyToAdd = Math.max(0, item.quantity - item.currentStock);
@@ -248,15 +256,19 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
 
         if (existingItem) {
           const newQuantity = existingItem.quantity + qtyToAdd;
-          await db.update(shoppingListItems).set({ quantity: newQuantity, category: compoundCategory, updatedAt: new Date() }).where(eq(shoppingListItems.id, existingItem.id));
+          await db.update(shoppingListItems).set({ quantity: newQuantity, category: compoundCategory, updatedAt: new Date(), isSynced: false }).where(eq(shoppingListItems.id, existingItem.id));
           updatedCount++;
         } else {
           await db.insert(shoppingListItems).values({
             id: uuidv4(), productId: item.productId, name: item.name, quantity: qtyToAdd,
-            unit: item.unit, category: compoundCategory, price: 0, isChecked: false, createdAt: new Date(), updatedAt: new Date()
+            unit: item.unit, category: compoundCategory, price: 0, isChecked: false, createdAt: new Date(), updatedAt: new Date(), isSynced: false
           });
           addedCount++;
         }
+      }
+
+      if ((addedCount > 0 || updatedCount > 0) && user) {
+        SyncService.notifyChanges(user.id); // --- SYNC AUTO
       }
 
       let msg = `${addedCount} novos e ${updatedCount} somados no Carrinho!`;
@@ -268,7 +280,6 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
     } catch (e) { showToast("Erro ao adicionar à lista de compras.", "error"); }
   };
 
-  // --- FUNÇÃO PARA FORMATAR AS UNIDADES ---
   const formatQuantityFriendly = (qty: number, unit: string) => {
       let dQty = qty; let dUnit = unit.toLowerCase();
       if (dUnit === 'g' && qty >= 1000) { dQty = qty / 1000; dUnit = 'kg'; }
@@ -276,7 +287,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
       return `${Number.isInteger(dQty) ? dQty : dQty.toFixed(2)}${dUnit}`;
   };
 
-  // --- FILTRO INTELIGENTE ANTES DO AGRUPAMENTO ---
+  // FILTRO INTELIGENTE ANTES DO AGRUPAMENTO
   const filteredItems = items.filter(item => {
       const missing = Math.max(0, item.quantity - (item.currentStock || 0));
       const isMissing = missing > 0;
@@ -295,7 +306,6 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
 
   const sections = Object.keys(grouped).map((key) => ({ title: key, data: grouped[key] }));
 
-  // Funções de formatação visual...
   const getLocationInfo = (loc: string) => {
     switch (loc) { case "fridge": return COLORS.locations.fridge; case "freezer": return COLORS.locations.freezer; default: return COLORS.locations.pantry; }
   };
@@ -338,7 +348,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
     <SafeAreaView style={styles.container}>
       <ScreenHeader title={templateName} subtitle={`${items.length} itens nesta lista`} icon="chevron-back" onIconPress={() => navigation.goBack()} />
 
-      {/* --- NOVA BARRA DE FILTROS DE ESTOQUE --- */}
+      {/* --- BARRA DE FILTROS DE ESTOQUE --- */}
       {items.length > 0 && (
         <View style={styles.filtersWrapper}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filtersScroll}>
@@ -369,7 +379,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
           <View style={styles.sectionHeaderRow}><Text style={styles.sectionTitle}>{title}</Text></View>
         )}
         renderItem={({ item }) => {
-          // --- LÓGICA DO BADGE VISUAL DE ESTOQUE ---
+          // LÓGICA DO BADGE VISUAL DE ESTOQUE
           const currentStock = item.currentStock || 0;
           const missing = Math.max(0, item.quantity - currentStock);
           const hasStock = currentStock > 0;
@@ -433,7 +443,7 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
         </View>
       )}
 
-      {/* --- O POPUP ELEGANTE PARA ESCOLHER COMO ADICIONAR --- */}
+      {/* O POPUP ELEGANTE PARA ESCOLHER COMO ADICIONAR */}
       <BottomSheetModal visible={actionSheetVisible} onClose={() => setActionSheetVisible(false)} title="Enviar para Compras">
         <Text style={styles.actionSheetText}>Como deseja adicionar os itens desta lista ao seu carrinho?</Text>
         
@@ -461,11 +471,10 @@ export default function TemplateDetailScreen({ route, navigation }: any) {
       </BottomSheetModal>
 
       <BottomSheetModal visible={modalVisible} onClose={closeModal} title={editingItemId ? "Editar Item" : "Adicionar à Lista Fixa"}>
-        {/* ... Modal content permanece idêntico ... */}
         {editingItemId ? (
           <View style={{ marginBottom: SPACING.md }}><Text style={styles.label}>Produto</Text><Text style={styles.editingNameText}>{query}</Text></View>
         ) : (
-          <><Text style={styles.label}>Procurar Produto</Text><View style={styles.searchRow}><View style={{ flex: 1 }}><Autocomplete placeholder="Ex: Leite, Arroz..." items={catalog} value={query} onChangeText={setQuery} onSelect={selectProduct} closeOnSelect={false} /></View><TouchableOpacity style={styles.barcodeBtn} onPress={() => setIsScanning(true)}><Ionicons name="barcode-outline" size={24} color={COLORS.text.light} /></TouchableOpacity></View></>
+          <><Text style={styles.label}>Procurar Produto</Text><View style={styles.searchRow}><View style={{ flex: 1 }}><Autocomplete placeholder="Ex: Leite, Arroz..." data={catalog} value={query} onChangeText={setQuery} onSelect={selectProduct} closeOnSelect={false} /></View><TouchableOpacity style={styles.barcodeBtn} onPress={() => setIsScanning(true)}><Ionicons name="barcode-outline" size={24} color={COLORS.text.light} /></TouchableOpacity></View></>
         )}
         {selectedProduct && (
           <View style={styles.productDetailCard}>

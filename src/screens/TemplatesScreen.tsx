@@ -30,8 +30,13 @@ import { v4 as uuidv4 } from "uuid";
 import { useToast } from "@/contexts/ToastContext";
 import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 
+// --- IMPORTS PARA SINCRONIZAÇÃO ---
+import { SyncService } from "@/services/SyncService";
+import { useAuth } from "@/contexts/AuthContext";
+
 export default function TemplatesScreen({ navigation }: any) {
   const { showToast } = useToast();
+  const { user } = useAuth(); // Acesso ao utilizador para o Sync
 
   const [templates, setTemplates] = useState<any[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -120,7 +125,8 @@ export default function TemplatesScreen({ navigation }: any) {
       if (editingTemplateId) {
         await db
           .update(shoppingListTemplates)
-          .set({ name: templateName, updatedAt: new Date() })
+          // Adicionado isSynced: false para forçar envio
+          .set({ name: templateName, updatedAt: new Date(), isSynced: false })
           .where(eq(shoppingListTemplates.id, editingTemplateId));
         showToast("Lista atualizada!", "success");
       } else {
@@ -129,9 +135,14 @@ export default function TemplatesScreen({ navigation }: any) {
           name: templateName,
           createdAt: new Date(),
           updatedAt: new Date(),
+          isSynced: false // Marca como não sincronizado
         });
         showToast("Lista fixa criada!", "success");
       }
+
+      // DISPARA SYNC
+      if (user) SyncService.notifyChanges(user.id);
+
       closeModal();
       loadTemplates();
     } catch (e) {
@@ -150,6 +161,10 @@ export default function TemplatesScreen({ navigation }: any) {
         await db
           .delete(shoppingListTemplates)
           .where(eq(shoppingListTemplates.id, id));
+        
+        // DISPARA SYNC
+        if (user) SyncService.notifyChanges(user.id);
+
         setAlertConfig((prev) => ({ ...prev, visible: false }));
         loadTemplates();
         showToast("Lista apagada.", "success");
@@ -206,10 +221,12 @@ export default function TemplatesScreen({ navigation }: any) {
           const newQuantity = existingItem.quantity + item.quantity;
           await db
             .update(shoppingListItems)
+            // isSynced: false para avisar que mudou
             .set({
               quantity: newQuantity,
               category: compoundCategory,
               updatedAt: new Date(),
+              isSynced: false 
             })
             .where(eq(shoppingListItems.id, existingItem.id));
           updatedCount++;
@@ -225,10 +242,15 @@ export default function TemplatesScreen({ navigation }: any) {
             isChecked: false,
             createdAt: new Date(),
             updatedAt: new Date(),
+            isSynced: false // Novo item
           });
           addedCount++;
         }
       }
+
+      // DISPARA SYNC PARA ATUALIZAR O CARRINHO NA NUVEM
+      if (user) SyncService.notifyChanges(user.id);
+
       showToast(
         `${addedCount} novos itens e ${updatedCount} itens somados no Carrinho!`,
         "success",
@@ -304,7 +326,7 @@ export default function TemplatesScreen({ navigation }: any) {
                   { backgroundColor: styleProps.bg },
                 ]}
                 onPress={() =>
-                  navigation.navigate("TemplateDetails", {
+                  navigation.navigate("TemplateDetail", {
                     templateId: item.id,
                     templateName: item.name,
                   })

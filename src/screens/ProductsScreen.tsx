@@ -18,7 +18,9 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { ProductRepository } from "@/repositories/productRepository";
 import { ProductService } from "@/services/productService";
+import { SyncService } from "@/services/SyncService"; // IMPORTADO
 import { useToast } from "@/contexts/ToastContext";
+import { useAuth } from "@/contexts/AuthContext"; // IMPORTADO
 
 // Componentes UI e Tema
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
@@ -64,6 +66,7 @@ const SUGGESTED_TAGS = [
 ];
 
 export default function ProductsScreen() {
+  const { user } = useAuth(); // ADICIONADO PARA TER ACESSO AO USER ID
   const [products, setProducts] = useState<Product[]>([]);
   const [searchText, setSearchText] = useState("");
   const [modalVisible, setModalVisible] = useState(false);
@@ -172,9 +175,7 @@ export default function ProductsScreen() {
     if (!name.trim()) return showToast("O nome é obrigatório.", "error");
 
     try {
-      // 1. Limpa a string do packSize: Troca vírgulas por pontos se existirem
       const cleanPackSize = packSize ? packSize.replace(",", ".") : "0";
-      // 2. Converte para número
       const parsedPackSize = parseFloat(cleanPackSize) || 0;
 
       const data = {
@@ -183,7 +184,6 @@ export default function ProductsScreen() {
         brand,
         category,
         defaultLocation,
-        // PASSA O NUMERO CORRETO PARA A BASE DE DADOS
         packSize: parsedPackSize,
         packUnit: packUnit,
         unit: packUnit,
@@ -199,11 +199,17 @@ export default function ProductsScreen() {
 
       if (editingId) {
         await ProductRepository.updateProduct(editingId, data);
-        showToast("Produto atualizado com sucesso!", "success");
+        showToast("Produto atualizado localmente!", "success");
       } else {
         await ProductRepository.createProduct(data);
-        showToast("Produto criado com sucesso!", "success");
+        showToast("Produto criado localmente!", "success");
       }
+
+      // --- SINCRONIZAÇÃO AUTOMÁTICA IMEDIATA ---
+      if (user) {
+        SyncService.notifyChanges(user.id);
+      }
+
       setModalVisible(false);
       loadProducts();
     } catch (e) {
@@ -223,6 +229,12 @@ export default function ProductsScreen() {
           style: "destructive",
           onPress: async () => {
             await ProductRepository.deleteProduct(id);
+            
+            // --- SINCRONIZAÇÃO AUTOMÁTICA APÓS EXCLUIR ---
+            if (user) {
+              SyncService.notifyChanges(user.id);
+            }
+            
             showToast("Produto removido.", "info");
             loadProducts();
           },
@@ -313,7 +325,11 @@ export default function ProductsScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={styles.container}>
-        <ScreenHeader title="Catálogo" subtitle="A sua base de dados" />
+        <ScreenHeader 
+          title="Catálogo" 
+          subtitle="Base de dados de produtos" 
+          icon="chevron-back"
+        />
 
         <View style={styles.searchBox}>
           <Ionicons name="search" size={20} color={COLORS.text.secondary} />
@@ -348,7 +364,7 @@ export default function ProductsScreen() {
         <BottomSheetModal
           visible={modalVisible}
           onClose={() => setModalVisible(false)}
-          title={editingId ? "Editar" : "Novo Produto"}
+          title={editingId ? "Editar Produto" : "Novo Produto"}
         >
           <View style={styles.imageSection}>
             <TouchableOpacity onPress={() => setIsScanning(true)}>
@@ -574,6 +590,9 @@ export default function ProductsScreen() {
     </GestureHandlerRootView>
   );
 }
+
+// ... Estilos permanecem os mesmos ...
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },

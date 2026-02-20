@@ -1,75 +1,82 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { COLORS, SPACING } from '../../constants/theme';
 
-type Props = {
+interface Props {
   title: string;
   subtitle?: string;
-  icon?: keyof typeof Ionicons.glyphMap; 
+  icon?: keyof typeof Ionicons.glyphMap;
   onIconPress?: () => void;
-  iconColor?: string;
-};
+  // --- NOVAS PROPRIEDADES ---
+  rightIcon?: keyof typeof Ionicons.glyphMap;
+  onRightIconPress?: () => void;
+}
 
-export function ScreenHeader({ title, subtitle, icon, onIconPress, iconColor }: Props) {
+export function ScreenHeader({ 
+  title, 
+  subtitle, 
+  icon, 
+  onIconPress,
+  rightIcon,
+  onRightIconPress 
+}: Props) {
+  const navigation = useNavigation();
+
   return (
     <View style={styles.container}>
-      <View style={styles.topRow}>
-        <Text style={styles.title}>{title}</Text>
-        
-        {/* SECÇÃO DIREITA: APENAS O ÍCONE (Se existir) */}
+      <View style={styles.leftSection}>
         {icon && (
-          <View style={styles.rightControls}>
-            <TouchableOpacity 
-              onPress={onIconPress}
-              activeOpacity={0.4}
-              style={styles.iconButton}
-            >
-              <Ionicons 
-                name={icon} 
-                size={22} 
-                color={iconColor || COLORS.text.primary} 
-              />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity 
+            style={styles.iconBtn} 
+            onPress={onIconPress || (() => navigation.goBack())}
+          >
+            <Ionicons name={icon} size={24} color={COLORS.text.primary} />
+          </TouchableOpacity>
         )}
+        <View>
+          <Text style={styles.title}>{title}</Text>
+          {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+        </View>
       </View>
 
-      {/* SUBTÍTULO ABAIXO DO TÍTULO */}
-      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+      {/* --- NOVO: BOTÃO DA DIREITA --- */}
+      {rightIcon && (
+        <TouchableOpacity style={styles.iconBtn} onPress={onRightIconPress}>
+          <Ionicons name={rightIcon} size={24} color={COLORS.text.primary} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: SPACING.xl,
-    paddingTop: SPACING.xl,
-    paddingBottom: SPACING.md,
-    backgroundColor: 'transparent',
-  },
-  topRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center', 
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '600', // Um negrito mais suave e elegante (Minimalista)
-    color: COLORS.text.primary,
-    letterSpacing: -0.5,
-  },
-  rightControls: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    backgroundColor: COLORS.background,
   },
-  iconButton: {
-    padding: 4, // Removemos o fundo, bordas e sombras. Apenas o ícone limpo!
+  leftSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  iconBtn: {
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: COLORS.card,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.text.primary,
   },
   subtitle: {
-    fontSize: 14,
-    fontWeight: '400',
+    fontSize: 12,
     color: COLORS.text.secondary,
   },
 });

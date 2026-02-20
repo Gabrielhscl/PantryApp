@@ -1,52 +1,68 @@
-import "react-native-get-random-values";
-import React, { useEffect, useState } from "react";
-import { View, ActivityIndicator } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { Ionicons } from "@expo/vector-icons";
-import { StatusBar } from "expo-status-bar";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
+import React, { useEffect, useState } from 'react';
+import { StatusBar } from 'expo-status-bar';
+import { View, ActivityIndicator } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler'; // <--- IMPORTANTE: IMPORTAR ISTO
 
-import InventoryScreen from "./src/screens/InventoryScreen";
-import RecipesScreen from "./src/screens/RecipesScreen";
-import ShoppingListScreen from "./src/screens/ShoppingListScreen";
-import ProductsScreen from "./src/screens/ProductsScreen";
+// --- BASE DE DADOS & SERVIÇOS ---
+import { initDatabase } from './src/database/db';
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import { ToastProvider } from './src/contexts/ToastContext';
 
-// Importa os nossos Ecrãs Modernos
-import TemplatesScreen from "./src/screens/TemplatesScreen";
-import TemplateDetailScreen from "./src/screens/TemplateDetailScreen";
-import ImportNfceScreen from "./src/screens/ImportNfceScreen";
+// --- TELAS DE AUTENTICAÇÃO ---
+import LoginScreen from './src/screens/auth/LoginScreen';
+import RegisterScreen from './src/screens/auth/RegisterScreen';
 
-import { initDatabase } from "./src/database/db";
-import { ToastProvider } from "./src/contexts/ToastContext";
-import { COLORS } from "./src/constants/theme";
+// --- TELAS PRINCIPAIS (ABAS) ---
+import InventoryScreen from './src/screens/InventoryScreen';
+import RecipesScreen from './src/screens/RecipesScreen';
+import ShoppingListScreen from './src/screens/ShoppingListScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 
-const Tab = createBottomTabNavigator();
+// --- TELAS SECUNDÁRIAS (STACK) ---
+import TemplatesScreen from './src/screens/TemplatesScreen';
+import TemplateDetailScreen from './src/screens/TemplateDetailScreen';
+import ProductsScreen from './src/screens/ProductsScreen';
+import ImportNfceScreen from './src/screens/ImportNfceScreen';
+
+// --- TEMA ---
+import { COLORS } from './src/constants/theme';
+
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
 
+// --- NAVEGADOR DE ABAS (BOTTOM TABS) ---
 function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        tabBarStyle: {
+          backgroundColor: COLORS.background,
+          borderTopColor: COLORS.border,
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.text.secondary,
-        tabBarStyle: {
-          paddingBottom: 5,
-          height: 60,
-          borderTopColor: COLORS.border,
-        },
         tabBarIcon: ({ focused, color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap = "home";
-          if (route.name === "Estoque")
-            iconName = focused ? "cube" : "cube-outline";
-          else if (route.name === "Receitas")
-            iconName = focused ? "restaurant" : "restaurant-outline";
-          else if (route.name === "Lista")
-            iconName = focused ? "cart" : "cart-outline";
-          else if (route.name === "Catálogo")
-            iconName = focused ? "grid" : "grid-outline";
+          let iconName: any;
+
+          if (route.name === 'Estoque') {
+            iconName = focused ? 'cube' : 'cube-outline';
+          } else if (route.name === 'Receitas') {
+            iconName = focused ? 'book' : 'book-outline';
+          } else if (route.name === 'Lista') {
+            iconName = focused ? 'cart' : 'cart-outline';
+          } else if (route.name === 'Perfil') {
+            iconName = focused ? 'person' : 'person-outline';
+          }
+
           return <Ionicons name={iconName} size={size} color={color} />;
         },
       })}
@@ -54,70 +70,84 @@ function MainTabs() {
       <Tab.Screen name="Estoque" component={InventoryScreen} />
       <Tab.Screen name="Receitas" component={RecipesScreen} />
       <Tab.Screen name="Lista" component={ShoppingListScreen} />
-      <Tab.Screen name="Catálogo" component={ProductsScreen} />
+      <Tab.Screen name="Perfil" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
 
+// --- CONTROLADOR DE NAVEGAÇÃO (AUTH WALL) ---
+function NavigationWrapper() {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {!session ? (
+        // --- SE NÃO ESTIVER LOGADO (AUTH STACK) ---
+        <Stack.Group>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
+        </Stack.Group>
+      ) : (
+        // --- SE ESTIVER LOGADO (APP STACK) ---
+        <Stack.Group>
+          {/* As abas principais */}
+          <Stack.Screen name="Main" component={MainTabs} />
+          
+          {/* Telas de Navegação Profunda */}
+          <Stack.Screen name="Templates" component={TemplatesScreen} />
+          <Stack.Screen name="TemplateDetail" component={TemplateDetailScreen} />
+          <Stack.Screen name="Products" component={ProductsScreen} />
+          
+          {/* Telas Modais */}
+          <Stack.Screen 
+            name="ImportNfce" 
+            component={ImportNfceScreen} 
+            options={{ presentation: 'modal' }}
+          />
+        </Stack.Group>
+      )}
+    </Stack.Navigator>
+  );
+}
+
+// --- COMPONENTE RAIZ ---
 export default function App() {
   const [dbReady, setDbReady] = useState(false);
 
   useEffect(() => {
     const setup = async () => {
-      try {
-        await initDatabase();
-        setDbReady(true);
-      } catch (e) {
-        console.error("Erro ao iniciar banco:", e);
-      }
+      // Inicializa o banco de dados (SQLite)
+      await initDatabase();
+      setDbReady(true);
     };
     setup();
   }, []);
 
-  if (!dbReady)
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
+  if (!dbReady) {
+    return null; 
+  }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ToastProvider>
-        <NavigationContainer>
-          {/* FORÇA A BARRA DE ESTADO DO TELEMÓVEL A FICAR PRETA POR CIMA DO ECRÃ BRANCO/CINZA */}
-          <StatusBar
-            style="dark"
-            backgroundColor="transparent"
-            translucent={true}
-          />
-
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Main" component={MainTabs} />
-
-            {/* ECRÃ DE LISTAS FIXAS PRINCIPAL */}
-            <Stack.Screen
-              name="Templates"
-              component={TemplatesScreen}
-              // headerShown: false para usarmos o nosso lindo ScreenHeader
-            />
-
-            {/* ECRÃ DE DENTRO DA LISTA FIXA */}
-            <Stack.Screen
-              name="TemplateDetail" // Atualizado para o nome correto
-              component={TemplateDetailScreen}
-              options={{ headerShown: false }}
-            />
-
-            {/* ECRÃ DE LEITURA DE NOTA FISCAL (NFCe) */}
-            <Stack.Screen
-              name="ImportNfce"
-              component={ImportNfceScreen}
-              options={{ presentation: "modal" }} // Fica bonito abrindo de baixo pra cima
-            />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </ToastProvider>
+    // <--- IMPORTANTE: ENVOLVER TUDO COM GestureHandlerRootView
+    <GestureHandlerRootView style={{ flex: 1 }}> 
+      <SafeAreaProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <NavigationContainer>
+              <StatusBar style="dark" />
+              <NavigationWrapper />
+            </NavigationContainer>
+          </ToastProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

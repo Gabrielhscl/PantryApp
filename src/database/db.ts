@@ -2,7 +2,8 @@ import { openDatabaseSync } from "expo-sqlite";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import * as schema from "./schema";
 
-const DATABASE_NAME = "pantry_local_v15.db"; // <--- MUDE PARA V15 PARA FORÇAR LIMPEZA DE ERROS!
+// MUDAMOS PARA v17 PARA INCLUIR A TABELA DE PERFIL DE UTILIZADOR
+const DATABASE_NAME = "pantry_local_v17.db";
 
 export const expoDb = openDatabaseSync(DATABASE_NAME);
 export const db = drizzle(expoDb, { schema });
@@ -11,6 +12,16 @@ export const initDatabase = async () => {
   try {
     await expoDb.execAsync(`
       PRAGMA foreign_keys = ON;
+
+      -- TABELA DE PERFIL DE UTILIZADOR (NOVA)
+      CREATE TABLE IF NOT EXISTS user_profiles (
+        id TEXT PRIMARY KEY NOT NULL,
+        full_name TEXT,
+        phone TEXT,
+        avatar_url TEXT,
+        is_synced INTEGER DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
 
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY NOT NULL,
@@ -30,6 +41,7 @@ export const initDatabase = async () => {
         fiber REAL,
         sodium REAL,
         allergens TEXT,
+        is_synced INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -55,6 +67,7 @@ export const initDatabase = async () => {
         preparation_time INTEGER,
         servings INTEGER DEFAULT 1,
         image TEXT,
+        is_synced INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -65,6 +78,7 @@ export const initDatabase = async () => {
         product_id TEXT NOT NULL REFERENCES products(id),
         quantity REAL NOT NULL,
         unit TEXT NOT NULL,
+        is_synced INTEGER DEFAULT 0,
         is_optional INTEGER DEFAULT 0
       );
 
@@ -77,6 +91,7 @@ export const initDatabase = async () => {
         category TEXT,
         is_checked INTEGER DEFAULT 0,
         price REAL DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -84,11 +99,11 @@ export const initDatabase = async () => {
       CREATE TABLE IF NOT EXISTS shopping_list_templates (
         id TEXT PRIMARY KEY NOT NULL,
         name TEXT NOT NULL,
+        is_synced INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
 
-      -- --- TABELA DE ITENS DE LISTA FIXA V2 (SINCRONIZADA COM O SCHEMA.TS) ---
       CREATE TABLE IF NOT EXISTS template_items_v2 (
         id TEXT PRIMARY KEY NOT NULL,
         template_id TEXT NOT NULL REFERENCES shopping_list_templates(id) ON DELETE CASCADE,
@@ -99,11 +114,12 @@ export const initDatabase = async () => {
         category TEXT DEFAULT 'Outros',
         is_checked INTEGER DEFAULT 0,
         price REAL DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
         created_at INTEGER,
         updated_at INTEGER
       );
     `);
-    console.log("✅ Banco v15: Pronto com suporte total a Listas Fixas!");
+    console.log("✅ Banco v17: Pronto com suporte a Perfil Completo e Sincronização!");
   } catch (error) {
     console.error("❌ Erro ao iniciar banco:", error);
   }

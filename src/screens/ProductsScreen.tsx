@@ -1,3 +1,4 @@
+import 'react-native-get-random-values';
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -172,50 +173,66 @@ export default function ProductsScreen({ navigation }: any) {
     }
   };
 
+  // --- FUNÇÃO HANDLESAVE CORRIGIDA E BLINDADA ---
   const handleSave = async () => {
     if (!name.trim()) return showToast("O nome é obrigatório.", "error");
 
     try {
-      const cleanPackSize = packSize ? packSize.replace(",", ".") : "0";
-      const parsedPackSize = parseFloat(cleanPackSize) || 0;
+      // 1. Tratamento seguro de números (troca vírgula por ponto e garante zero se vazio)
+      const parseNumber = (val: string) => {
+        if (!val) return 0;
+        const clean = val.toString().replace(",", ".");
+        const num = parseFloat(clean);
+        return isNaN(num) ? 0 : num;
+      };
+
+      const finalPackSize = parseNumber(packSize);
 
       const data = {
-        barcode,
-        name,
-        brand,
+        barcode: barcode || null, // Envia null se estiver vazio para não bloquear unique constraint
+        name: name.trim(),
+        brand: brand.trim(),
         category,
         defaultLocation,
-        packSize: parsedPackSize,
+        packSize: finalPackSize,
         packUnit: packUnit,
         unit: packUnit,
         image,
-        calories: parseFloat(calories) || 0,
-        carbs: parseFloat(carbs) || 0,
-        protein: parseFloat(protein) || 0,
-        fat: parseFloat(fat) || 0,
-        fiber: parseFloat(fiber) || 0,
-        sodium: parseFloat(sodium) || 0,
+        // Garante que nutrição vai como número
+        calories: parseNumber(calories),
+        carbs: parseNumber(carbs),
+        protein: parseNumber(protein),
+        fat: parseNumber(fat),
+        fiber: parseNumber(fiber),
+        sodium: parseNumber(sodium),
         allergens: alertTags.join(","),
+        updatedAt: new Date(), // Força atualização da data
+        isSynced: false // Marca para sincronizar
       };
+
+      console.log("Tentando salvar produto:", data); // LOG PARA DEBUG
 
       if (editingId) {
         await ProductRepository.updateProduct(editingId, data);
-        showToast("Produto atualizado localmente!", "success");
+        showToast("Produto atualizado!", "success");
       } else {
         await ProductRepository.createProduct(data);
-        showToast("Produto criado localmente!", "success");
+        showToast("Produto criado!", "success");
       }
 
-      // --- SINCRONIZAÇÃO AUTOMÁTICA IMEDIATA ---
+      // --- SINCRONIZAÇÃO ---
       if (user) {
         SyncService.notifyChanges(user.id);
       }
 
       setModalVisible(false);
       loadProducts();
-    } catch (e) {
-      showToast("Falha ao guardar produto.", "error");
-      console.log(e);
+      resetForm(); // Limpa o formulário após salvar
+
+    } catch (e: any) {
+      // console.error("ERRO AO SALVAR:", e);
+      // Mostra o erro real na tela para sabermos o que é
+      Alert.alert("Erro ao Salvar", `Detalhe técnico: ${e.message || JSON.stringify(e)}`);
     }
   };
 

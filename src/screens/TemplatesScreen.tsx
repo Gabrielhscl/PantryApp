@@ -33,11 +33,11 @@ import { COLORS, SPACING, RADIUS } from "@/constants/theme";
 // --- IMPORTS PARA SINCRONIZAÇÃO E SUPABASE ---
 import { SyncService } from "@/services/SyncService";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/lib/supabase"; // IMPORTANTE: ADICIONADO PARA DELETAR NA NUVEM
+import { supabase } from "@/lib/supabase"; 
 
 export default function TemplatesScreen({ navigation }: any) {
   const { showToast } = useToast();
-  const { user } = useAuth(); // Acesso ao utilizador para o Sync
+  const { user } = useAuth(); 
 
   const [templates, setTemplates] = useState<any[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -149,7 +149,7 @@ export default function TemplatesScreen({ navigation }: any) {
     }
   };
 
-  // --- CORREÇÃO: DELETE COM REMOÇÃO DIRETA NA NUVEM ---
+  // --- DELETE ULTRA-RÁPIDO (Atualiza o ecrã antes da nuvem) ---
   const handleDelete = (id: string, name: string) => {
     setAlertConfig({
       visible: true,
@@ -158,23 +158,32 @@ export default function TemplatesScreen({ navigation }: any) {
       type: "danger",
       confirmText: "Sim, Apagar",
       onConfirm: async () => {
-        // 1. Apaga itens e template localmente (para refletir na tela imediatamente)
-        await db.delete(templateItems).where(eq(templateItems.templateId, id));
-        await db.delete(shoppingListTemplates).where(eq(shoppingListTemplates.id, id));
-        
-        // 2. Apaga diretamente no Supabase para evitar efeito fantasma
-        if (user) {
-          // Apaga itens do template primeiro
-          await supabase.from('template_items_v2').delete().eq('template_id', id);
-          // Apaga o template
-          await supabase.from('shopping_list_templates').delete().eq('id', id);
-          
-          SyncService.notifyChanges(user.id);
-        }
-
+        // 1. FECHA O POPUP IMEDIATAMENTE
         setAlertConfig((prev) => ({ ...prev, visible: false }));
-        loadTemplates();
-        showToast("Lista apagada.", "success");
+
+        try {
+          // 2. APAGA NO SEU TELEMÓVEL PRIMEIRO (SQLite local)
+          await db.delete(templateItems).where(eq(templateItems.templateId, id));
+          await db.delete(shoppingListTemplates).where(eq(shoppingListTemplates.id, id));
+          
+          // 3. ATUALIZA O ECRÃ IMEDIATAMENTE (O item desaparece na hora!)
+          loadTemplates();
+          showToast("Lista apagada.", "success");
+
+          // 4. APAGA NA NUVEM EM SEGUNDO PLANO (Não usamos "await" para não travar o ecrã)
+          if (user) {
+            supabase.from('template_items').delete().eq('template_id', id).then();
+            supabase.from('template_items_v2').delete().eq('template_id', id).then();
+            
+            supabase.from('shopping_list_templates').delete().eq('id', id).then(() => {
+              SyncService.notifyChanges(user.id);
+            });
+          }
+
+        } catch (error) {
+          console.error("Erro SQLite ao apagar lista fixa:", error);
+          showToast("Erro ao apagar. Verifique o terminal.", "error");
+        }
       },
     });
   };
@@ -191,8 +200,10 @@ export default function TemplatesScreen({ navigation }: any) {
     setTemplateName("");
   };
 
+  // --- FUNÇÃO CORRIGIDA E BLINDADA ---
   const handleUseTemplate = async (template: any) => {
     try {
+      // 1. Busca os itens do template
       const tplItems = await db
         .select()
         .from(templateItems)
@@ -205,6 +216,7 @@ export default function TemplatesScreen({ navigation }: any) {
           "warning",
         );
 
+      // 2. Busca a lista de compras atual para verificar duplicatas
       const currentShoppingList = await db
         .select()
         .from(shoppingListItems)
@@ -213,7 +225,9 @@ export default function TemplatesScreen({ navigation }: any) {
       let addedCount = 0;
       let updatedCount = 0;
 
+      // 3. Itera sobre os itens do template
       for (const item of tplItems) {
+        // Verifica se já existe um item com mesmo produto OU mesmo nome
         const existingItem = currentShoppingList.find(
           (c) =>
             (item.productId && c.productId === item.productId) ||
@@ -221,28 +235,35 @@ export default function TemplatesScreen({ navigation }: any) {
               c.name.toLowerCase() === item.name.toLowerCase()),
         );
 
+        // Prepara a categoria (para agrupar visualmente na lista)
         const realCategory = item.category || "Outros";
-        const compoundCategory = `${realCategory}|[Fixo] ${template.name}`;
+        // Remove caracteres especiais que possam quebrar a string
+        const cleanTemplateName = template.name.replace(/[|]/g, '-');
+        const compoundCategory = `${realCategory}|[Fixo] ${cleanTemplateName}`;
 
         if (existingItem) {
-          const newQuantity = existingItem.quantity + item.quantity;
+          // SE JÁ EXISTE: Soma a quantidade
+          const newQuantity = (existingItem.quantity || 0) + (item.quantity || 1);
+          
           await db
             .update(shoppingListItems)
             .set({
               quantity: newQuantity,
-              category: compoundCategory,
+              category: compoundCategory, // Atualiza a categoria para mostrar de onde veio
               updatedAt: new Date(),
               isSynced: false 
             })
             .where(eq(shoppingListItems.id, existingItem.id));
+          
           updatedCount++;
         } else {
+          // SE NÃO EXISTE: Cria novo
           await db.insert(shoppingListItems).values({
             id: uuidv4(),
-            productId: item.productId,
-            name: item.name,
-            quantity: item.quantity,
-            unit: item.unit,
+            productId: item.productId || null, // Garante que não vai undefined
+            name: item.name || "Item sem nome",
+            quantity: item.quantity || 1,
+            unit: item.unit || "un",
             category: compoundCategory,
             price: 0,
             isChecked: false,
@@ -250,19 +271,25 @@ export default function TemplatesScreen({ navigation }: any) {
             updatedAt: new Date(),
             isSynced: false 
           });
+          
           addedCount++;
         }
       }
 
+      // 4. Notifica a nuvem
       if (user) SyncService.notifyChanges(user.id);
 
       showToast(
-        `${addedCount} novos itens e ${updatedCount} itens somados no Carrinho!`,
+        `${addedCount} novos e ${updatedCount} atualizados na Lista!`,
         "success",
       );
+      
+      // 5. Navega para a lista
       navigation.navigate("Main", { screen: "Lista" });
-    } catch (e) {
-      showToast("Falha ao usar a lista.", "error");
+
+    } catch (e: any) {
+      console.error("ERRO AO USAR LISTA:", e);
+      showToast(`Falha: ${e.message || "Erro desconhecido"}`, "error");
     }
   };
 

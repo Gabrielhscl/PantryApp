@@ -304,11 +304,14 @@ export default function ShoppingListScreen({ navigation }: any) {
 
   // --- CORREÇÃO: REMOÇÃO DIRETA DA NUVEM AO FINALIZAR COMPRAS ---
   const confirmFinishShopping = async (checkedItems: any[]) => {
+    // 1. FECHA O POPUP IMEDIATAMENTE
+    setAlertConfig((prev) => ({ ...prev, visible: false }));
+
+    // 2. FAZ O TRABALHO PESADO
     for (const item of checkedItems) {
       const prod = catalog.find((p) => p.id === item.productId);
       const loc = prod?.defaultLocation || "pantry";
 
-      // Adiciona no stock
       await InventoryRepository.createItem({
         productId: item.productId,
         name: item.name,
@@ -317,11 +320,8 @@ export default function ShoppingListScreen({ navigation }: any) {
         location: loc,
         expiryDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
       });
-      
-      // Apaga localmente
       await ShoppingRepository.deleteItem(item.id);
       
-      // Apaga na nuvem (Supabase) para não voltar como fantasma
       if (user) {
         await supabase.from('shopping_list_items').delete().eq('id', item.id);
       }
@@ -330,7 +330,6 @@ export default function ShoppingListScreen({ navigation }: any) {
     if (user) SyncService.notifyChanges(user.id); 
     
     await refresh();
-    setAlertConfig((prev) => ({ ...prev, visible: false }));
     showToast("Compras guardadas no stock!", "success");
   };
 
@@ -681,13 +680,15 @@ export default function ShoppingListScreen({ navigation }: any) {
                 type: "danger",
                 confirmText: "Sim, Excluir",
                 onConfirm: async () => {
-                  // --- CORREÇÃO: REMOÇÃO DIRETA DA NUVEM AO APAGAR ITEM ---
+                  // 1. FECHA O POPUP IMEDIATAMENTE (UI rápida)
+                  setAlertConfig((prev) => ({ ...prev, visible: false }));
+                  
+                  // 2. FAZ A REMOÇÃO EM SEGUNDO PLANO
                   await removeItem(item.id);
                   if (user) {
                     await supabase.from('shopping_list_items').delete().eq('id', item.id);
                     SyncService.notifyChanges(user.id);
                   }
-                  setAlertConfig((prev) => ({ ...prev, visible: false }));
                 },
               });
             }}
